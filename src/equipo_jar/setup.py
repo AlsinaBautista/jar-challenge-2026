@@ -23,7 +23,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'nodo_equipo = equipo_jar.nodo_equipo:main',
+            'cobertura = equipo_jar.cobertura:main',
+            'deteccion = equipo_jar.deteccion:main',
+            'fusion = equipo_jar.fusion:main',
+            'mision = equipo_jar.mision:main',
         ],
     },
 )

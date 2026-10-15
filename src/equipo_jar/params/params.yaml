@@ -5,8 +5,13 @@
 # coordenadas, rutas ni posiciones de víctimas. El CI (tools/verificar_params.py)
 # rechaza estos archivos si rompen la regla.
 #
-nodo_equipo:
-  ros__parameters:
-    frecuencia_control_hz: 10.0
-    velocidad_lineal_max: 0.30      # m/s
-    velocidad_angular_max: 1.00     # rad/s
+# Una sección por nodo. Los nombres no pueden contener victim, coord, spawn ni
+# posicion_ (docs/team/INTERFACES.md).
+cobertura:
+  ros__parameters: {}
+deteccion:
+  ros__parameters: {}
+fusion:
+  ros__parameters: {}
+mision:
+  ros__parameters: {}
