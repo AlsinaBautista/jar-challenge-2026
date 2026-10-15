@@ -1,10 +1,11 @@
-# Batch runs on the team's simulation server (the self-hosted runner labelled "jarsim").
+# Batch runs on the team's simulation server (the self-hosted runners labelled "jarsim").
 # Start it from the Actions tab or:  gh workflow run simular.yml -f rama=<branch> -f mapas=maze_1_6x5
 # It always runs from development (the server refuses other refs) and tests the branch in `rama`.
 # Don't edit this file: the server refuses any version but its reviewed copy (ask the owner).
-# The server side (/srv/jarsim/bin/correr-lote on that PC) validates the inputs; they reach it
-# only through env vars. One runner: concurrent requests wait in GitHub's queue.
-# Team-only file: excluded from the final submission (docs/team/FLOW.md).
+# Each run (map × repetition) is its own job, at most 2 of a request at once; the server has 4
+# run runners, so requests from different people share them through GitHub's queue.
+# Inputs reach scripts only through env vars; the server (/srv/jarsim/bin/correr-lote on that
+# PC) validates them again. Team-only file: excluded from the final submission (docs/team/FLOW.md).
 name: simular
 run-name: "simular ${{ inputs.rama }} · ${{ inputs.mapas }} ×${{ inputs.repeticiones }} · ${{ inputs.duracion }} s${{ inputs.grabar && ' · rec' || '' }}"
 
@@ -20,7 +21,7 @@ on:
         type: string
         default: maze_1_6x5
       repeticiones:
-        description: Runs per map (1-10; at most 40 runs in total)
+        description: Runs per map (1-10; at most 12 runs in total)
         type: string
         default: "1"
       duracion:
@@ -35,37 +36,76 @@ on:
 permissions: {}
 
 jobs:
-  lote:
-    runs-on: jarsim
-    # Largest batch: 40 runs, 6 at once → 7 waves of at most 600 + 300 s, plus the build.
-    timeout-minutes: 150
+  # Splits the request into runs. On a GitHub-hosted runner: it only checks and splits strings
+  # (no secrets, no checkout), so it doesn't take one of the server's runners.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      corridas: ${{ steps.plan.outputs.corridas }}
     steps:
-      - name: Run the batch
+      - name: Check the request and list its runs
+        id: plan
         env:
-          RAMA: ${{ inputs.rama }}
           MAPAS: ${{ inputs.mapas }}
           REPETICIONES: ${{ inputs.repeticiones }}
+          DURACION: ${{ inputs.duracion }}
+        run: |
+          mal() { echo "::error::$*"; exit 1; }
+          [[ "$MAPAS" =~ ^[a-z0-9_]{1,40}(,[a-z0-9_]{1,40}){0,9}$ ]] || mal "mapas: comma-separated map names"
+          [[ "$REPETICIONES" =~ ^([1-9]|10)$ ]] || mal "repeticiones: 1 to 10"
+          [[ "$DURACION" =~ ^[1-9][0-9]{1,2}$ ]] && [ "$DURACION" -ge 10 ] && [ "$DURACION" -le 600 ] ||
+            mal "duracion: 10 to 600 seconds"
+          IFS=, read -r -a m <<< "$MAPAS"
+          [ "$(printf '%s\n' "${m[@]}" | sort -u | wc -l)" -eq "${#m[@]}" ] || mal "a map is repeated in mapas"
+          n=$(( ${#m[@]} * REPETICIONES ))
+          [ "$n" -le 12 ] || mal "$n runs requested, at most 12 per request"
+          for x in "${m[@]}"; do for (( r = 1; r <= REPETICIONES; r++ )); do
+            jq -nc --arg mapa "$x" --argjson rep "$r" '{mapa: $mapa, rep: $rep}'
+          done; done | jq -sc . | sed 's/^/corridas=/' >> "$GITHUB_OUTPUT"
+          echo "$n runs: $MAPAS × $REPETICIONES"
+
+  corrida:
+    needs: plan
+    name: ${{ matrix.mapa }} · ${{ matrix.rep }}
+    runs-on: jarsim
+    # One run: at most 600 + 300 s, plus the build.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2   # per request: one request never takes every run runner
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.corridas) }}
+    steps:
+      - name: Run
+        env:
+          RAMA: ${{ inputs.rama }}
+          MAPA: ${{ matrix.mapa }}
           DURACION: ${{ inputs.duracion }}
           GRABAR: ${{ inputs.grabar }}
           JARSIM_ID_FILE: ${{ runner.temp }}/lote-id
         # exec: cancelling the job signals correr-lote itself, which removes its containers.
+        # JARSIM_GPU comes from the runner (each one has its GPU).
         run: >-
-          exec /srv/jarsim/bin/correr-lote --rama "$RAMA" --mapas "$MAPAS"
-          --repeticiones "$REPETICIONES" --duracion "$DURACION" --grabar "$GRABAR"
+          exec /srv/jarsim/bin/correr-lote --rama "$RAMA" --mapas "$MAPA"
+          --repeticiones 1 --duracion "$DURACION" --grabar "$GRABAR"
 
       - name: Summary
         id: resumen
         if: always()
         env:
           JARSIM_ID_FILE: ${{ runner.temp }}/lote-id
+          MAPA: ${{ matrix.mapa }}
+          REP: ${{ matrix.rep }}
         run: |
-          [ -f "$JARSIM_ID_FILE" ] || { echo "No batch was started (see the step above)."; exit 0; }
+          [ -f "$JARSIM_ID_FILE" ] || { echo "No run was started (see the step above)."; exit 0; }
           id="$(cat "$JARSIM_ID_FILE")"
           [[ "$id" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}(-[2-9])?$ ]] || { echo "bad batch id"; exit 1; }
           lote="/srv/jarsim-data/runs/$id"
           echo "lote=$id" >> "$GITHUB_OUTPUT"
+          echo "### $MAPA · repetition $REP" >> "$GITHUB_STEP_SUMMARY"
           if [ -f "$lote/resumen.md" ]; then cat "$lote/resumen.md" >> "$GITHUB_STEP_SUMMARY"
-          else echo "Batch \`$id\` ended without a summary (see the step above)." >> "$GITHUB_STEP_SUMMARY"; fi
+          else echo "Run \`$id\` ended without a summary (see the step above)." >> "$GITHUB_STEP_SUMMARY"; fi
           # Small artifact: summaries, results and plots, never the recordings (on the viewer).
           # Run folders are written by the tested code: copy regular files only, no symlinks.
           art="$RUNNER_TEMP/artefacto"; rm -rf "$art"; mkdir -p "$art"
