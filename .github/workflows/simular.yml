@@ -1,0 +1,81 @@
+# Batch runs on the team's simulation server (the self-hosted runner labelled "jarsim").
+# Start it from the Actions tab or:  gh workflow run simular.yml -f rama=<branch> -f mapas=maze_1_6x5
+# It always runs from development (the server refuses other refs) and tests the branch in `rama`.
+# The server side (/srv/jarsim/bin/correr-lote on that PC) validates the inputs; they reach it
+# only through env vars. One runner: concurrent requests wait in GitHub's queue.
+# Team-only file: excluded from the final submission (docs/team/FLOW.md).
+name: simular
+run-name: "simular ${{ inputs.rama }} · ${{ inputs.mapas }} ×${{ inputs.repeticiones }} · ${{ inputs.duracion }} s"
+
+on:
+  workflow_dispatch:
+    inputs:
+      rama:
+        description: Branch of this repo to test
+        type: string
+        default: development
+      mapas:
+        description: Maps, comma-separated (maze_1_6x5, maze_2_6x5, maze_3_6x6, maze_4_metal_6x6, laberinto_1, laberinto_simple)
+        type: string
+        default: maze_1_6x5
+      repeticiones:
+        description: Runs per map (1-10; at most 40 runs in total)
+        type: string
+        default: "1"
+      duracion:
+        description: Seconds per run after the judge publishes /map (10-600)
+        type: string
+        default: "600"
+
+permissions: {}
+
+jobs:
+  lote:
+    runs-on: jarsim
+    # Largest batch: 40 runs, 6 at once → 7 waves of at most 600 + 300 s, plus the build.
+    timeout-minutes: 150
+    steps:
+      - name: Run the batch
+        env:
+          RAMA: ${{ inputs.rama }}
+          MAPAS: ${{ inputs.mapas }}
+          REPETICIONES: ${{ inputs.repeticiones }}
+          DURACION: ${{ inputs.duracion }}
+          JARSIM_ID_FILE: ${{ runner.temp }}/lote-id
+        # exec: cancelling the job signals correr-lote itself, which removes its containers.
+        run: >-
+          exec /srv/jarsim/bin/correr-lote --rama "$RAMA" --mapas "$MAPAS"
+          --repeticiones "$REPETICIONES" --duracion "$DURACION"
+
+      - name: Summary
+        id: resumen
+        if: always()
+        env:
+          JARSIM_ID_FILE: ${{ runner.temp }}/lote-id
+        run: |
+          [ -f "$JARSIM_ID_FILE" ] || { echo "No batch was started (see the step above)."; exit 0; }
+          id="$(cat "$JARSIM_ID_FILE")"
+          [[ "$id" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}(-[2-9])?$ ]] || { echo "bad batch id"; exit 1; }
+          lote="/srv/jarsim-data/runs/$id"
+          echo "lote=$id" >> "$GITHUB_OUTPUT"
+          if [ -f "$lote/resumen.md" ]; then cat "$lote/resumen.md" >> "$GITHUB_STEP_SUMMARY"
+          else echo "Batch \`$id\` ended without a summary (see the step above)." >> "$GITHUB_STEP_SUMMARY"; fi
+          # Small artifact: summaries, results and plots, never the recordings (on the viewer).
+          # Run folders are written by the tested code: copy regular files only, no symlinks.
+          art="$RUNNER_TEMP/artefacto"; rm -rf "$art"; mkdir -p "$art"
+          copiar() { [ -f "$1" ] && [ ! -L "$1" ] && mkdir -p "$2" && cp "$1" "$2/" || true; }
+          for f in lote.json resumen.json resumen.md; do copiar "$lote/$f" "$art"; done
+          for d in "$lote"/corridas/*/; do
+            [ -d "$d" ] || continue
+            n="$(basename "$d")"
+            for f in meta.json resultado.json resumen.md grafico.png; do copiar "$d$f" "$art/corridas/$n"; done
+          done
+
+      - name: Upload the summary
+        if: always() && steps.resumen.outputs.lote != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lote-${{ steps.resumen.outputs.lote }}
+          path: ${{ runner.temp }}/artefacto/
+          if-no-files-found: ignore
+          retention-days: 30
