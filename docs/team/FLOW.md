@@ -22,8 +22,9 @@ Module prefixes: `localizacion`, `navegacion`, `cobertura`, `deteccion`,
    - New task: `git switch development && git pull`, then create `<module>/<task>`.
    - Small changes. Before the PR: build, run `bash tools/verificar.sh --template`
      (or the fork CI), and test in simulation.
-   - PR to `development`, merged with green CI, working in simulation and one
-     teammate's review.
+   - PR to `development`, merged by its author once CI is green and it works in
+     simulation. No review needed, except interface changes (see
+     [`INTERFACES.md`](INTERFACES.md)).
    - Branches live 1–3 days, even if the module is not finished. Pull
      `development` into your branch often. Delete the branch after the merge.
 4. **Delivery:** `development` is merged into `main` as **one squash commit**
@@ -88,6 +89,9 @@ With another agent, do the same in its instructions file.
 - **No agent attribution:** no commit or PR carries an agent's
   `Co-Authored-By` or lines like "Generated with …".
 - **Don't touch `tools/` or the organizers' workflows.**
+- **Don't edit our workflows (`simular.yml`) either:** they run on the team's
+  simulation server, which refuses any version its owner hasn't reviewed. Ask
+  Emiliano-Aguilera.
 - **`equipo.yaml` is filled in before the delivery PR** to the organizers.
 - The CI rules that are easy to break are in the root `CLAUDE.md`
   ("CI and delivery traps").
