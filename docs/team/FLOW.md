@@ -16,7 +16,7 @@ Module prefixes: `localizacion`, `navegacion`, `cobertura`, `deteccion`,
 
 1. **Interfaces:** everyone reviews [`INTERFACES.md`](INTERFACES.md) from their
    module and comments on the `interfaces` PR.
-2. **Desarrollo:** once agreed, `development` is created from `interfaces`,
+2. **Development:** once agreed, `development` is created from `interfaces`,
    made the default branch, and the PR is closed without merging.
 3. **Modules:**
    - New task: `git switch development && git pull`, then create `<module>/<task>`.
@@ -31,6 +31,18 @@ Module prefixes: `localizacion`, `navegacion`, `cobertura`, `deteccion`,
 
 `development` must always build, launch and score. A node that doesn't work yet
 is merged anyway, but kept out of `competencia.launch.py`.
+
+## Checks
+
+- **Compliance is checked by CI.** The organizers' CI runs on every PR to
+  `development`: the delivery checks on the code we would deliver, except that
+  `equipo.yaml` may still be unfilled.
+- **Batch runs on the simulation server measure behaviour** (score, time,
+  recordings). They skip the organizers' interface audit: our recorder there
+  triggers false failures. A green batch doesn't mean CI passes.
+- **Before the delivery,** `bash tools/verificar.sh` without `--template` must
+  pass (it also checks that `equipo.yaml` is filled in). Run it from time to
+  time, not only at the end.
 
 ## What the final squash leaves out
 
