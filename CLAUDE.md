@@ -5,14 +5,19 @@
 
 Shared context for the 5 team members **and their coding agents**. Everything here is verified against
 the rules, `tools/` or the simulator. If anything contradicts the official rules (cited as §N), the rules win:
-https://airclub-udesa.github.io/jar_site/reglamento/ . Code, comments and team docs are in Spanish; this file is in English.
+https://airclub-udesa.github.io/jar_site/reglamento/ . All team docs and Markdown files are in English.
+
+Read with this file:
+
+- @docs/team/INTERFACES.md: what each module receives and delivers.
+- @docs/team/FLOW.md: branches, PRs and what the final delivery leaves out.
 
 ## The challenge
 
 A Yahboom ROSMASTER X3 (mecanum, ROS 2 Humble) receives a known maze map on `/map`, finds N red boxes
 ("víctimas"), reports their centers on `/victimas`, optionally returns to start and publishes `/done`.
 Fully autonomous. Rosario: qualification Wed 2026-11-04 (2 runs, best counts, top 4 advance); final
-Thu 2026-11-05 17:00 (1 run, new layout). Delivery cutoff: unknown (asked to the organizers).
+Thu 2026-11-05 17:00 (1 run, new layout). Delivery cutoff: unknown (question not sent yet, see `docs/team/ORGANIZER_QUESTIONS.md`).
 
 ## Run protocol (§5, §11)
 
@@ -58,10 +63,10 @@ Floor 0. Max 100·N + 300. Tie-break: shorter total time (t0 → `/done` or stop
 | `/odom`, `/imu/data`, `/tf`, `/tf_static` (+ `/joint_states`, allowed by the template) | robot → team | standard | reliable (`/tf_static` transient local) |
 
 - QoS mismatch = silent: a reliable subscriber on a best-effort topic receives nothing. Details: `docs/QOS.md`.
-- Team nodes publish only on `/victimas`, `/done`, `/cmd_vel`, `/tf`, `/tf_static`. Never on `/map`
+- Of the official topics, team nodes publish only on `/victimas`, `/done`, `/cmd_vel`, `/tf`, `/tf_static`. Never on `/map`
   (no Nav2 `map_server`, no SLAM output on `/map`).
 - Every other platform topic is forbidden, e.g. `/imu/data_raw`, `/cam_1/depth/image_raw`, `/scan_filtered`,
-  `/ground_truth/*`, `/internal/*`, `cmd_vel_gz`, Gazebo topics. Internal team topics: prefix `/equipo/`.
+  `/ground_truth/*`, `/internal/*`, `cmd_vel_gz`, Gazebo topics. Internal team topics: prefix `/jar/`.
 
 ## Robot and arena facts (physical X3, from simulator `real_robot_contract.yaml` @ `jar2026-v1`)
 
@@ -141,36 +146,33 @@ _Pending: Emiliano-Aguilera documents the team's Linux simulation machine here (
 
 ## Team
 
-| Module | Owner(s) (GitHub) | Scope |
+| Module (branch prefix) | Owner(s) (GitHub) | Scope |
 | --- | --- | --- |
-| localizacion + percepcion | Emiliano-Aguilera, SantosBunge | pose in `map`; red-box detection, center estimate, candidates |
-| navegacion | hans-die | Nav2 config, obstacle avoidance; the only `/cmd_vel` publisher |
-| mision | AlsinaBautista | state machine, report policy, `/victimas`, `/done`, return to start |
-| cobertura | marcorita | where to look next (viewpoints, search order) |
-| integration | Emiliano-Aguilera, hans-die | `competencia.launch.py`, `package.xml`, `setup.py`, `Dockerfile`, delivery PR |
+| `localizacion` | hans-die | pose in `map` (AMCL, TF `map → odom`) |
+| `navegacion` | hans-die | Nav2 config, obstacle avoidance; the only `/cmd_vel` publisher |
+| `cobertura` | marcorita | where to look from (viewpoints with orientation, order); backs up navigation |
+| `deteccion` (perception) | Emiliano-Aguilera or SantosBunge | red in the camera + LiDAR distance → point in `map`, face-to-center correction |
+| `fusion` (perception) | Emiliano-Aguilera or SantosBunge | groups observations into candidates with uncertainty |
+| `mision` | AlsinaBautista | state machine, report policy, `/victimas`, `/done`, return to start |
 
 - Remotes: `origin` = Emiliano-Aguilera/jar_challenge (team fork, **public**: every pushed branch is visible),
   `upstream` = AIRclub-UdeSA/jar_challenge.
-- Module interfaces: `docs/equipo/INTERFACES.md`. Changing one needs the OK of both sides' owners.
+- Module interfaces: `docs/team/INTERFACES.md`. Changing one needs the OK of both sides' owners.
 
 ## Git workflow
 
-1. Integration branch: `desarrollo` (from `main`). Nobody commits directly to `desarrollo` or `main`.
-2. New task: `git switch desarrollo && git pull`, then branch `<module>-<task>` (e.g. `navegacion-movimiento`).
-3. Small changes. Before the PR: build, `tools/verificar.sh --template` (or the fork CI), and test in simulation.
-4. PR `<module>-<task>` → `desarrollo`. Merge only with green CI, working in sim and one teammate's review.
-   Every merge wires its node into `competencia.launch.py` (or keeps it out if unfinished): `desarrollo`
-   must always build, launch and score.
-5. Branches live 1–3 days; delete after merge; pull `desarrollo` into your branch often.
-6. Commit messages: `<module>: <what changed>` plus a body line with the why. Git history is the team log.
+Branches, PRs and the final squash are in `docs/team/FLOW.md`. In short: work on `<module>/<task>`
+branches from `development` (e.g. `navegacion/movimiento`), PR back to `development`, never commit to
+`development` or `main` directly. Commit messages: `<module>: <what changed>` plus a body line with the why.
 
 ## Rules for agents (and humans)
 
 - Never commit, push, merge or open PRs unless your user asks. Never force-push shared branches.
-- Never touch `tools/` or `.github/`. No agent attribution in commits or PRs (no `Co-Authored-By`, no "Generated with");
+- Never touch `tools/` or the organizers' workflows (`.github/workflows/validar-entrega.yml`,
+  `publicar-ranking.yml`). Our own workflows in `.github/workflows/` are fine. No agent attribution in commits or PRs (no `Co-Authored-By`, no "Generated with");
   `.claude/settings.json` enforces this for Claude Code.
 - All text (commits, PRs, comments, docs, logs, messages): as simple and short as possible, plain words,
   but technically precise. Simple wording, same technical level.
 - Touching another module's files or a shared file (launch, `package.xml`, `setup.py`, `Dockerfile`, interfaces): ask first.
-- At session start: `git fetch`, confirm you are on a task branch (not `desarrollo`/`main`), skim recent commits.
+- At session start: `git fetch`, confirm you are on a task branch (not `development`/`main`), skim recent commits.
 - Many members are new to git, ROS 2 and agents: explain what you do and why, in plain words.
