@@ -1,0 +1,87 @@
+# Live session on the team's simulation server (the self-hosted runners labelled "jarsim-sesion"):
+# simulator + judge + the branch's launch, open in Lichtblick (link in the job summary) to drive,
+# publish goals, change parameters and call services. Start it from the Actions tab or:
+#   gh workflow run sesion.yml -f rama=<branch> -f mapa=maze_1_6x5
+# It always runs from development (the server refuses other refs) and runs the branch in `rama`.
+# Don't edit this file: the server refuses any version but its reviewed copy (ask the owner).
+# The session lasts `minutos` at most; cancel the job to end it sooner. 5 sessions at once at
+# most (5 runners); more wait in GitHub's queue. Inputs reach scripts only through env vars; the
+# server (/srv/jarsim/bin/sesion on that PC) validates them. Team-only file: excluded from the
+# final submission (docs/team/FLOW.md).
+name: sesion
+run-name: "sesion ${{ inputs.rama }} · ${{ inputs.mapa }} · ${{ inputs.launch }} · ${{ inputs.minutos }} min"
+
+on:
+  workflow_dispatch:
+    inputs:
+      rama:
+        description: Branch of this repo to run
+        type: string
+        default: development
+      mapa:
+        description: Map (maze_1_6x5, maze_2_6x5, maze_3_6x6, maze_4_metal_6x6, laberinto_1, laberinto_simple)
+        type: string
+        default: maze_1_6x5
+      launch:
+        description: Team launch file
+        type: choice
+        options:
+          - pruebas.launch.py
+          - competencia.launch.py
+        default: pruebas.launch.py
+      minutos:
+        description: Max length in minutes (10-240); cancel the job to end it sooner
+        type: string
+        default: "120"
+
+permissions: {}
+
+jobs:
+  sesion:
+    runs-on: jarsim-sesion
+    # 240 min max session + build; past this GitHub cancels the job, which ends the session.
+    timeout-minutes: 270
+    steps:
+      - name: Start (build the branch, start the simulator)
+        id: inicio
+        env:
+          RAMA: ${{ inputs.rama }}
+          MAPA: ${{ inputs.mapa }}
+          LAUNCH: ${{ inputs.launch }}
+          MINUTOS: ${{ inputs.minutos }}
+          JARSIM_ID_FILE: ${{ runner.temp }}/sesion-id
+        # JARSIM_GPU comes from the runner (each one has its GPU).
+        run: |
+          /srv/jarsim/bin/sesion iniciar --rama "$RAMA" --mapa "$MAPA" --launch "$LAUNCH" --minutos "$MINUTOS"
+          id="$(cat "$JARSIM_ID_FILE")"
+          [[ "$id" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}-sesion(-[2-9])?$ ]] || { echo "bad session id"; exit 1; }
+          enlace="$(cat "/srv/jarsim-data/runs/$id/enlace.txt")"
+          [[ "$enlace" =~ ^https://[A-Za-z0-9.-]+/\?[A-Za-z0-9._~%=\&-]+$ ]] || { echo "bad link"; exit 1; }
+          {
+            echo "### Live session \`$id\`"
+            echo
+            echo "**[Open in Lichtblick]($enlace)** (on the tailnet; the page may take a few seconds to connect)."
+            echo
+            echo "Map \`$MAPA\`, \`$LAUNCH\`, at most $MINUTOS min. Cancel this job to end it."
+            echo "Buttons in the layout: start/stop recording (the stop answer has the recording's"
+            echo "link; deleted after 7 days), reset the simulation, update to the branch's latest commit"
+            echo "(push first: the simulator keeps running, only your launch restarts). Status: \`/sesion/estado\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "Lichtblick: $enlace"
+
+      - name: Session (until the max length or a cancel)
+        env:
+          ID: ${{ steps.inicio.outputs.id }}
+        # exec: cancelling the job signals `sesion` itself, which ends the session.
+        run: exec /srv/jarsim/bin/sesion esperar "$ID"
+
+      - name: End (remove the session's containers)
+        if: always()
+        env:
+          JARSIM_ID_FILE: ${{ runner.temp }}/sesion-id
+        run: |
+          [ -f "$JARSIM_ID_FILE" ] || { echo "No session was started."; exit 0; }
+          id="$(cat "$JARSIM_ID_FILE")"
+          [[ "$id" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}-sesion(-[2-9])?$ ]] || { echo "bad session id"; exit 1; }
+          /srv/jarsim/bin/sesion terminar "$id"
