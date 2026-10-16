@@ -17,9 +17,15 @@ How the project works, and where this server fits: [OVERVIEW.md](OVERVIEW.md).
 
 - **GitHub:** sign in. Job summaries (where the results and links are) are shown only to
   signed-in users. You need write access to the fork to start runs; all members have it.
-- **Tailscale:** accept the machine share that Emiliano-Aguilera sends you, and keep
-  Tailscale on. The viewer links in the summaries (recordings, live sessions, run files)
-  work only through Tailscale.
+- **Tailscale:** the viewer links in the summaries (recordings, live sessions, run files)
+  work only through Tailscale. Set it up once:
+  1. Install Tailscale (macOS: App Store or tailscale.com/download; Windows: the installer).
+  2. Sign in with a personal account (Google or GitHub), not a work or university one.
+     Accepting a share needs admin rights on your tailnet, and a personal account has them.
+  3. Open the share link Emiliano-Aguilera sent you, and accept it. Each link works once:
+     don't forward it, ask for your own.
+  4. Keep Tailscale connected while you use the viewer links.
+  5. Check: a viewer link from a job summary opens. If it doesn't, check that Tailscale is on.
 - **`gh` CLI** (optional, needed for agents): `gh auth login` once. The commands below
   use `-R Emiliano-Aguilera/jar_challenge`, so they work from any folder.
 
