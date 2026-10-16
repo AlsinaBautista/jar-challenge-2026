@@ -22,8 +22,8 @@ How the project works, and where this server fits: [OVERVIEW.md](OVERVIEW.md).
   1. Install Tailscale (macOS: App Store or tailscale.com/download; Windows: the installer).
   2. Sign in with a personal account (Google or GitHub), not a work or university one.
      Accepting a share needs admin rights on your tailnet, and a personal account has them.
-  3. Open the share link Emiliano-Aguilera sent you, and accept it. Each link works once:
-     don't forward it, ask for your own.
+  3. Open the share link Emiliano-Aguilera sent you, and accept it. Keep the link private:
+     anyone who has it can reach the server.
   4. Keep Tailscale connected while you use the viewer links.
   5. Check: a viewer link from a job summary opens. If it doesn't, check that Tailscale is on.
 - **`gh` CLI** (optional, needed for agents): `gh auth login` once. The commands below
