@@ -6,8 +6,6 @@ are in the root [`CLAUDE.md`](../../CLAUDE.md); module contracts in
 contradicts the official rules, the rules win:
 https://airclub-udesa.github.io/jar_site/reglamento/ .
 
-<!-- TODO: link the team's ROS 2 basics manual here once its author agrees. -->
-
 ## The mission in a paragraph
 
 The judges place **Donatello**, a Yahboom ROSMASTER X3, by hand near the origin of a maze we
