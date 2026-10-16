@@ -1,6 +1,6 @@
 # Context for SantosBunge's agent
 
-Module: _(fill in)_
+Module: deteccion or fusion (not decided yet)
 
 The root `CLAUDE.md` already loads the rules, the interfaces and the
 workflow. This module's decisions are in `notes/SantosBunge/NOTES.md`.

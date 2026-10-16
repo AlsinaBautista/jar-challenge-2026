@@ -1,6 +1,6 @@
 # Context for hans-die's agent
 
-Module: _(fill in)_
+Module: localizacion + navegacion
 
 The root `CLAUDE.md` already loads the rules, the interfaces and the
 workflow. This module's decisions are in `notes/hans-die/NOTES.md`.

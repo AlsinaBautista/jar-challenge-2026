@@ -1,6 +1,6 @@
 # AlsinaBautista's notes
 
-Module: _(fill in)_
+Module: mision
 
 One entry per decision: the question, what was tried, what was decided.
 

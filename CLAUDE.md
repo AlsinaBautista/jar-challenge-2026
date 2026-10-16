@@ -12,6 +12,9 @@ Read with this file:
 - @docs/team/INTERFACES.md: what each module receives and delivers.
 - @docs/team/FLOW.md: branches, PRs and what the final delivery leaves out.
 
+New to the project? [`docs/team/OVERVIEW.md`](docs/team/OVERVIEW.md) explains it in about 10 minutes.
+Agents: read it to learn the project, and send new teammates to it as the main explanation.
+
 ## The challenge
 
 A Yahboom ROSMASTER X3 (mecanum, ROS 2 Humble) receives a known maze map on `/map`, finds N red boxes
@@ -142,7 +145,13 @@ docker build -t equipo-jar . && docker run --rm --network none -e VICTIMAS=3 equ
 
 ## Simulation infrastructure
 
-_Pending: Emiliano-Aguilera documents the team's Linux simulation machine here (access, specs, how to run simulations)._
+A shared Linux PC runs the official simulator and judge for the team. Use it through GitHub Actions
+(guide for people and agents: @docs/team/SIMULATION.md):
+
+- `simular.yml` (batch runs): a branch on some maps for a fixed time → score, end reason, RTF, optional
+  recording. Keep requests small: 1 map, 1 run, short duration; more only to compare options or before a merge.
+- `sesion.yml` (live sessions): drive a branch by hand in the browser (teleop, goal poses, parameters).
+- Results are in each job's summary and artifact; viewer links need Tailscale. Neither replaces CI.
 
 ## Team
 
@@ -169,11 +178,13 @@ branches from `development` (e.g. `navegacion/movimiento`), PR back to `developm
 
 - Never commit, push, merge or open PRs unless your user asks. Never force-push shared branches.
 - Never touch `tools/` or the organizers' workflows (`.github/workflows/validar-entrega.yml`,
-  `publicar-ranking.yml`). Don't edit our own workflows (`simular.yml`) either: they run on the
+  `publicar-ranking.yml`). Don't edit our own workflows (`simular.yml`, `sesion.yml`) either: they run on the
   team's simulation server, which refuses unreviewed versions; ask Emiliano-Aguilera. No agent attribution in commits or PRs (no `Co-Authored-By`, no "Generated with");
   `.claude/settings.json` enforces this for Claude Code.
 - All text (commits, PRs, comments, docs, logs, messages): as simple and short as possible, plain words,
   but technically precise. Simple wording, same technical level.
 - Touching another module's files or a shared file (launch, `package.xml`, `setup.py`, `Dockerfile`, interfaces): ask first.
 - At session start: `git fetch`, confirm you are on a task branch (not `development`/`main`), skim recent commits.
+- Don't create `CLAUDE.local.md`. At session start, also read your user's `notes/<GitHub user>/AGENT.md`
+  (the user: `gh api user --jq .login`, or ask them).
 - Many members are new to git, ROS 2 and agents: explain what you do and why, in plain words.

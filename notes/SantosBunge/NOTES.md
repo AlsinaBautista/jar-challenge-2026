@@ -1,6 +1,6 @@
 # SantosBunge's notes
 
-Module: _(fill in)_
+Module: deteccion or fusion (not decided yet)
 
 One entry per decision: the question, what was tried, what was decided.
 

@@ -40,7 +40,8 @@ is merged anyway, but kept out of `competencia.launch.py`.
   `equipo.yaml` may still be unfilled.
 - **Batch runs on the simulation server measure behaviour** (score, time,
   recordings). They skip the organizers' interface audit: our recorder there
-  triggers false failures. A green batch doesn't mean CI passes.
+  triggers false failures. A green batch doesn't mean CI passes. How to use
+  the server: [`SIMULATION.md`](SIMULATION.md).
 - **Before the delivery,** `bash tools/verificar.sh` without `--template` must
   pass (it also checks that `equipo.yaml` is filled in). Run it from time to
   time, not only at the end.
@@ -50,8 +51,8 @@ is merged anyway, but kept out of `competencia.launch.py`.
 The squash into `main` removes:
 
 - `notes/` and `docs/team/`;
-- `CLAUDE.md` and `.claude/` (they list our GitHub users; the delivery must not
-  carry personal data);
+- `CLAUDE.md`, `AGENTS.md` and `.claude/` (team-only; `CLAUDE.md` lists our
+  GitHub users, and the delivery must not carry personal data);
 - our workflows in `.github/workflows/` (keep the organizers' two). A delivery
   PR that touches `.github/` is not published to the practice leaderboard.
 
@@ -69,27 +70,15 @@ Each member has a folder in [`notes/`](../../notes/) with:
 
 Each person writes only in their own folder, so there are no conflicts.
 
-The root `CLAUDE.md` is shared. To also load your own notes in Claude Code,
-create `CLAUDE.local.md` at the root with
-
-```text
-@notes/<your-user>/AGENT.md
-```
-
-and keep it out of git in your copy:
-
-```bash
-echo CLAUDE.local.md >> .git/info/exclude
-```
-
-With another agent, do the same in its instructions file.
+Agents read their user's `notes/<GitHub user>/AGENT.md` at the start of each
+session (the root `CLAUDE.md` says so). Don't create a `CLAUDE.local.md`.
 
 ## Rules
 
 - **No agent attribution:** no commit or PR carries an agent's
   `Co-Authored-By` or lines like "Generated with …".
 - **Don't touch `tools/` or the organizers' workflows.**
-- **Don't edit our workflows (`simular.yml`) either:** they run on the team's
+- **Don't edit our workflows (`simular.yml`, `sesion.yml`) either:** they run on the team's
   simulation server, which refuses any version its owner hasn't reviewed. Ask
   Emiliano-Aguilera.
 - **`equipo.yaml` is filled in before the delivery PR** to the organizers.

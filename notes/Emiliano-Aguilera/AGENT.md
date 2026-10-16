@@ -1,6 +1,6 @@
 # Context for Emiliano-Aguilera's agent
 
-Module: _(fill in)_
+Module: deteccion or fusion (not decided yet)
 
 The root `CLAUDE.md` already loads the rules, the interfaces and the
 workflow. This module's decisions are in `notes/Emiliano-Aguilera/NOTES.md`.

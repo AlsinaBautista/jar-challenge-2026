@@ -1,6 +1,6 @@
 # marcorita's notes
 
-Module: _(fill in)_
+Module: cobertura
 
 One entry per decision: the question, what was tried, what was decided.
 

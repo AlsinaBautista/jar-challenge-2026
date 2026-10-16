@@ -1,6 +1,6 @@
 # Context for marcorita's agent
 
-Module: _(fill in)_
+Module: cobertura
 
 The root `CLAUDE.md` already loads the rules, the interfaces and the
 workflow. This module's decisions are in `notes/marcorita/NOTES.md`.

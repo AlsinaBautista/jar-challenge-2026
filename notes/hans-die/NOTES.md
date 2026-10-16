@@ -1,6 +1,6 @@
 # hans-die's notes
 
-Module: _(fill in)_
+Module: localizacion + navegacion
 
 One entry per decision: the question, what was tried, what was decided.
 

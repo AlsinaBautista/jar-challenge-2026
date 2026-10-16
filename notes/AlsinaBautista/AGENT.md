@@ -1,6 +1,6 @@
 # Context for AlsinaBautista's agent
 
-Module: _(fill in)_
+Module: mision
 
 The root `CLAUDE.md` already loads the rules, the interfaces and the
 workflow. This module's decisions are in `notes/AlsinaBautista/NOTES.md`.
