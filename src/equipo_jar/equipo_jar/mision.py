@@ -23,6 +23,7 @@ from equipo_jar.confirmacion import elegir_para_reportar
 from tf2_ros import Buffer, TransformListener, TransformException
 from rclpy.time import Time
 import math
+from action_msgs.msg import GoalStatus
 
 
 class Mision(Node):
@@ -46,6 +47,8 @@ class Mision(Node):
 
         self.ids_reportados = set()
         self.puntos_reportados = []
+
+        self.estado_nav = 'libre'
 
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
@@ -110,6 +113,36 @@ class Mision(Node):
             self.puntos_reportados.append((c.centro.x, c.centro.y))
             i = len(self.puntos_reportados)
             self.get_logger().info(f'Reporte {i}. id={c.id} x={c.centro.x :.2f} y={c.centro.y:.2f}')
+
+    def ir_a(self, pose):
+        if not self.navegacion.server_is_ready():
+            self.get_logger().warn('!!! El servidor de navegacion no esta listo !!!')
+            return
+        objetivo = NavigateToPose.Goal()
+        objetivo.pose = pose
+        self.estado_nav = "enviando"
+        futuro = self.navegacion.send_goal_async(objetivo)
+        futuro.add_done_callback(self.al_responder_objetivo)
+
+    def al_responder_objetivo(self, futuro):
+        goal_handle = futuro.result()
+        if not goal_handle.accepted:
+            self.estado_nav = 'fallo'
+            self.get_logger().warn('Fallo el objetivo')
+            return
+        self.objetivo_actual = goal_handle
+        self.estado_nav = 'yendo'
+        goal_handle.get_result_async().add_done_callback(self.al_terminar_objetivo)
+
+    def al_terminar_objetivo(self, futuro):
+        estado = futuro.result().status
+        if estado == GoalStatus.STATUS_SUCCEEDED:
+            self.estado_nav = 'llego'
+            self.get_logger().info('Status succeded')
+        else:
+            self.estado_nav = 'fallo'
+            self.get_logger().info('Status failed')
+        
 
     def al_recibir_plan(self, plan):
         self.plan = plan
