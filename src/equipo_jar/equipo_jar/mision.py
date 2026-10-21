@@ -39,7 +39,7 @@ class Mision(Node):
         self.candidatas = None
 
         self.t0 = None
-        self.create_timer(1.0, self.mostrar_reloj)
+        self.create_timer(0.1, self.paso)
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -49,6 +49,7 @@ class Mision(Node):
         self.puntos_reportados = []
 
         self.estado_nav = 'libre'
+        self.estado = 'esperando_mapa'
 
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
@@ -76,20 +77,6 @@ class Mision(Node):
         segundos = transcurrido.nanoseconds / 1e9
         return float(segundos)
 
-    def mostrar_reloj(self):
-        reloj = self.segundos_desde_t0()
-        if reloj is None:
-            self.get_logger().info('Esperando mapa...')
-        else:
-            if self.pose_inicio is None:
-                pose = self.pose_actual()
-                if pose is not None:
-                    self.pose_inicio = pose
-                    x, y, yaw = pose
-                    self.get_logger().info(f'Pose de inicio: x={x:.2f} y={y:.2f} yaw={yaw:.2f}')
-            self.get_logger().info(f'Pasaron {reloj} s desde que se recibio /map')
-            self.revisar_reportes()
-
     def pose_actual(self):
         try:
             pose = self.tf_buffer.lookup_transform('map', 'base_footprint', Time())
@@ -116,7 +103,7 @@ class Mision(Node):
 
     def ir_a(self, pose):
         if not self.navegacion.server_is_ready():
-            self.get_logger().warn('!!! El servidor de navegacion no esta listo !!!')
+            self.get_logger().warn('!!! El servidor de navegacion no esta listo !!!', throttle_duration_sec=5.0)
             return
         objetivo = NavigateToPose.Goal()
         objetivo.pose = pose
@@ -142,7 +129,29 @@ class Mision(Node):
         else:
             self.estado_nav = 'fallo'
             self.get_logger().info('Status failed')
-        
+
+    def cambiar_estado(self, nuevo):
+        self.get_logger().info(f'Estado: <{self.estado}> -> <{nuevo}>')
+        self.estado = nuevo
+
+    def paso(self):
+        if self.estado == 'esperando_mapa':
+            if self.t0 is not None:
+                self.cambiar_estado('explorando')
+            return
+        if self.pose_inicio is None:
+            pose = self.pose_actual()
+            if pose is not None:
+                self.pose_inicio = pose
+                x, y, yaw = pose
+                self.get_logger().info(f'Pose de inicio: x={x:.2f} y={y:.2f} yaw={yaw:.2f}')
+        self.revisar_reportes()
+        if self.estado == 'explorando':
+            self.explorar()
+
+    def explorar(self):
+        if self.estado_nav == 'libre' and self.plan is not None and len(self.plan.poses) > 0:
+            self.ir_a(self.plan.poses[0])
 
     def al_recibir_plan(self, plan):
         self.plan = plan
