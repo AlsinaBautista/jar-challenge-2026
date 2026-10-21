@@ -19,6 +19,7 @@ from equipo_jar.comun import QOS_ESTADO, QOS_MAPA, correr, parametros_en_vivo
 from equipo_jar.reportes import armar_reporte
 from equipo_jar_msgs.msg import Candidatas
 from equipo_jar.confirmacion import elegir_para_reportar
+from equipo_jar.exploracion import yaw_de_cuaternion, primer_pendiente
 
 from tf2_ros import Buffer, TransformListener, TransformException
 from rclpy.time import Time
@@ -32,7 +33,9 @@ class Mision(Node):
         # Cantidad de víctimas a buscar (N), que llega como argumento del launch (victimas:=N).
         self.declare_parameter('cantidad_victimas', 5)
         self.cantidad_victimas = self.get_parameter('cantidad_victimas').value
-        self.p = parametros_en_vivo(self, {'min_observaciones': 5, 'max_desvio_m': 0.10, 'distancia_min_reportes_m': 0.40})  # parámetros ajustables
+        self.p = parametros_en_vivo(self, {'min_observaciones': 5, 'max_desvio_m': 0.10, 
+                                            'distancia_min_reportes_m': 0.40, 'distancia_mismo_punto_m': 0.30, 
+                                            'angulo_mismo_punto_rad': 0.5})  # parámetros ajustables
 
         self.mapa = None
         self.plan = None
@@ -50,6 +53,9 @@ class Mision(Node):
 
         self.estado_nav = 'libre'
         self.estado = 'esperando_mapa'
+
+        self.visitados = []
+        self.punto_actual = None
 
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
@@ -83,7 +89,7 @@ class Mision(Node):
             x = pose.transform.translation.x
             y = pose.transform.translation.y
             q = pose.transform.rotation
-            yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+            yaw = yaw_de_cuaternion(q)
             return (x, y, yaw)
         except TransformException:
             return None
@@ -104,12 +110,13 @@ class Mision(Node):
     def ir_a(self, pose):
         if not self.navegacion.server_is_ready():
             self.get_logger().warn('!!! El servidor de navegacion no esta listo !!!', throttle_duration_sec=5.0)
-            return
+            return False
         objetivo = NavigateToPose.Goal()
         objetivo.pose = pose
         self.estado_nav = "enviando"
         futuro = self.navegacion.send_goal_async(objetivo)
         futuro.add_done_callback(self.al_responder_objetivo)
+        return True
 
     def al_responder_objetivo(self, futuro):
         goal_handle = futuro.result()
@@ -150,8 +157,26 @@ class Mision(Node):
             self.explorar()
 
     def explorar(self):
-        if self.estado_nav == 'libre' and self.plan is not None and len(self.plan.poses) > 0:
-            self.ir_a(self.plan.poses[0])
+        if self.estado_nav == 'enviando' or self.estado_nav == 'yendo':
+            return
+        if self.estado_nav == 'llego' or self.estado_nav == 'fallo':
+            x = self.punto_actual.pose.position.x
+            y = self.punto_actual.pose.position.y
+            yaw = yaw_de_cuaternion(self.punto_actual.pose.orientation)
+            self.visitados.append((x, y, yaw))
+            self.punto_actual = None
+            self.estado_nav = 'libre'
+        if self.plan is None:
+            return
+        punto = primer_pendiente(self.plan.poses, self.visitados, self.p['distancia_mismo_punto_m'], self.p['angulo_mismo_punto_rad'])
+        if punto is None:
+            return
+        enviado = self.ir_a(punto)
+        if enviado:
+            self.punto_actual = punto
+            q = punto.pose.orientation
+            yaw = yaw_de_cuaternion(q)
+            self.get_logger().info(f'Punto actual: ({punto.pose.position.x}, {punto.pose.position.y}, {yaw})')
 
     def al_recibir_plan(self, plan):
         self.plan = plan
