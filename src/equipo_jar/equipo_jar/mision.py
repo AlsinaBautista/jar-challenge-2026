@@ -32,6 +32,9 @@ class Mision(Node):
         self.plan = None
         self.candidatas = None
 
+        self.t0 = None
+        self.create_timer(1.0, self.mostrar_reloj)
+
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
         self.create_subscription(
@@ -47,7 +50,23 @@ class Mision(Node):
             self.get_logger().info(
                 f'Mapa recibido: {mapa.info.width}x{mapa.info.height} celdas, '
                 f'resolución {mapa.info.resolution:.3f} m')
+            self.t0 = self.get_clock().now()
         self.mapa = mapa
+
+    def segundos_desde_t0(self):
+        if self.t0 is None:
+            return None
+        ahora = self.get_clock().now()
+        transcurrido = ahora - self.t0
+        segundos = transcurrido.nanoseconds / 1e9
+        return float(segundos)
+
+    def mostrar_reloj(self):
+        reloj = self.segundos_desde_t0()
+        if reloj is None:
+            self.get_logger().info('Esperando mapa...')
+        else:
+            self.get_logger().info(f'Pasaron {reloj} s desde que se recibio /map')
 
     def al_recibir_plan(self, plan):
         self.plan = plan
