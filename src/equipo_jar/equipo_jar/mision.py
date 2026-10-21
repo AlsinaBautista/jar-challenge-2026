@@ -18,6 +18,7 @@ from std_msgs.msg import Empty
 from equipo_jar.comun import QOS_ESTADO, QOS_MAPA, correr, parametros_en_vivo
 from equipo_jar.reportes import armar_reporte
 from equipo_jar_msgs.msg import Candidatas
+from equipo_jar.confirmacion import elegir_para_reportar
 
 from tf2_ros import Buffer, TransformListener, TransformException
 from rclpy.time import Time
@@ -30,7 +31,7 @@ class Mision(Node):
         # Cantidad de víctimas a buscar (N), que llega como argumento del launch (victimas:=N).
         self.declare_parameter('cantidad_victimas', 5)
         self.cantidad_victimas = self.get_parameter('cantidad_victimas').value
-        self.p = parametros_en_vivo(self, {})  # parámetros ajustables
+        self.p = parametros_en_vivo(self, {'min_observaciones': 5, 'max_desvio_m': 0.10, 'distancia_min_reportes_m': 0.40})  # parámetros ajustables
 
         self.mapa = None
         self.plan = None
@@ -42,6 +43,9 @@ class Mision(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.pose_inicio = None
+
+        self.ids_reportados = set()
+        self.puntos_reportados = []
 
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
@@ -81,6 +85,7 @@ class Mision(Node):
                     x, y, yaw = pose
                     self.get_logger().info(f'Pose de inicio: x={x:.2f} y={y:.2f} yaw={yaw:.2f}')
             self.get_logger().info(f'Pasaron {reloj} s desde que se recibio /map')
+            self.revisar_reportes()
 
     def pose_actual(self):
         try:
@@ -92,6 +97,19 @@ class Mision(Node):
             return (x, y, yaw)
         except TransformException:
             return None
+
+    def revisar_reportes(self):
+        if self.candidatas is None:
+            return
+        elegidas = elegir_para_reportar(self.candidatas, self.ids_reportados, self.puntos_reportados,
+                                        self.cantidad_victimas, self.p['min_observaciones'], 
+                                        self.p['max_desvio_m'], self.p['distancia_min_reportes_m'])
+        for c in elegidas:
+            self.reportar_victima(c.centro.x, c.centro.y)
+            self.ids_reportados.add(c.id)
+            self.puntos_reportados.append((c.centro.x, c.centro.y))
+            i = len(self.puntos_reportados)
+            self.get_logger().info(f'Reporte {i}. id={c.id} x={c.centro.x :.2f} y={c.centro.y:.2f}')
 
     def al_recibir_plan(self, plan):
         self.plan = plan

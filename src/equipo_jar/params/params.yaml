@@ -14,4 +14,7 @@ deteccion:
 fusion:
   ros__parameters: {}
 mision:
-  ros__parameters: {}
+  ros__parameters: 
+    min_observaciones: 5
+    max_desvio_m: 0.10
+    distancia_min_reportes_m: 0.40

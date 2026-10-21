@@ -126,3 +126,9 @@ def test_no_modifica_las_listas_que_recibe():
     elegir([cand(1, 0.0, 0.0), cand(2, 2.0, 0.0)], ids_reportados, puntos_reportados)
     assert ids_reportados == {9}
     assert puntos_reportados == [(9.0, 9.0)]
+
+
+@pytest.mark.parametrize('x, y', [(math.nan, 1.0), (1.0, math.inf)])
+def test_saltea_centro_no_finito(x, y):
+    # armar_reporte rechaza NaN/inf con ValueError: elegirla tiraría abajo el nodo.
+    assert elegir([cand(1, x, y)]) == []

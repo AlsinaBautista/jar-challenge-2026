@@ -32,7 +32,9 @@ def elegir_para_reportar(cands, ids_reportados, puntos_reportados, n, min_obs, m
     puntos_elegidos = []
     for c in prioridad:
         confirmada = esta_confirmada(c.observaciones, c.covarianza_xy, min_obs, max_desvio)
-        if (not confirmada) or (c.id in ids_reportados) or cerca_de_alguno(c.centro.x, c.centro.y, puntos_reportados + puntos_elegidos, dist_min):
+        if ((not confirmada) or (c.id in ids_reportados) 
+            or cerca_de_alguno(c.centro.x, c.centro.y, puntos_reportados + puntos_elegidos, dist_min)
+            or (not math.isfinite(c.centro.x)) or (not math.isfinite(c.centro.y))):
             continue
         elegidas.append(c)
         puntos_elegidos.append((c.centro.x, c.centro.y))
