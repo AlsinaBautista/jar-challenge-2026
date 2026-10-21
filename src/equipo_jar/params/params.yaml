@@ -20,3 +20,4 @@ mision:
     distancia_min_reportes_m: 0.40
     distancia_mismo_punto_m: 0.30
     angulo_mismo_punto_rad: 0.5
+    tiempo_volver_s: 480.0

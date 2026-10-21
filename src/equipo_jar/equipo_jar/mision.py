@@ -14,6 +14,7 @@ from nav_msgs.msg import OccupancyGrid, Path
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from std_msgs.msg import Empty
+from geometry_msgs.msg import PoseStamped
 
 from equipo_jar.comun import QOS_ESTADO, QOS_MAPA, correr, parametros_en_vivo
 from equipo_jar.reportes import armar_reporte
@@ -35,7 +36,7 @@ class Mision(Node):
         self.cantidad_victimas = self.get_parameter('cantidad_victimas').value
         self.p = parametros_en_vivo(self, {'min_observaciones': 5, 'max_desvio_m': 0.10, 
                                             'distancia_min_reportes_m': 0.40, 'distancia_mismo_punto_m': 0.30, 
-                                            'angulo_mismo_punto_rad': 0.5})  # parámetros ajustables
+                                            'angulo_mismo_punto_rad': 0.5, 'tiempo_volver_s': 480.0})  # parámetros ajustables
 
         self.mapa = None
         self.plan = None
@@ -56,6 +57,9 @@ class Mision(Node):
 
         self.visitados = []
         self.punto_actual = None
+
+        self.vuelta_enviada = False
+        self.cancelando = False
 
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
@@ -146,6 +150,8 @@ class Mision(Node):
             if self.t0 is not None:
                 self.cambiar_estado('explorando')
             return
+        if self.estado == 'terminado':
+            return
         if self.pose_inicio is None:
             pose = self.pose_actual()
             if pose is not None:
@@ -154,7 +160,14 @@ class Mision(Node):
                 self.get_logger().info(f'Pose de inicio: x={x:.2f} y={y:.2f} yaw={yaw:.2f}')
         self.revisar_reportes()
         if self.estado == 'explorando':
-            self.explorar()
+            motivo = self.motivo_para_volver()
+            if motivo is not None:
+                self.get_logger().info(f'Vuelvo: {motivo}')
+                self.cambiar_estado('volviendo')
+            else:
+                self.explorar()
+        if self.estado == 'volviendo':
+            self.volver()
 
     def explorar(self):
         if self.estado_nav == 'enviando' or self.estado_nav == 'yendo':
@@ -178,6 +191,52 @@ class Mision(Node):
             yaw = yaw_de_cuaternion(q)
             self.get_logger().info(f'Punto actual: ({punto.pose.position.x}, {punto.pose.position.y}, {yaw})')
 
+    def motivo_para_volver(self):
+        if len(self.puntos_reportados) >= self.cantidad_victimas:
+            return 'todas reportadas'
+        elif self.segundos_desde_t0() >= self.p['tiempo_volver_s']:
+            return 'se termina el tiempo'
+        elif (self.plan is not None and self.estado_nav != 'enviando' and self.estado_nav != 'yendo' 
+                and primer_pendiente(self.plan.poses, self.visitados, self.p['distancia_mismo_punto_m'], 
+                    self.p['angulo_mismo_punto_rad']) is None):
+            return 'no quedan puntos'
+        return None
+
+    def pose_de(self, x, y, yaw):
+        pose = PoseStamped()
+        pose.header.frame_id = 'map'
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        pose.pose.orientation.z = math.sin(yaw / 2)
+        pose.pose.orientation.w = math.cos(yaw / 2)
+        return pose
+
+    def volver(self):
+        if self.estado_nav == 'enviando':
+            return
+        if self.estado_nav == 'yendo' and not self.vuelta_enviada:
+            if not self.cancelando:
+                self.objetivo_actual.cancel_goal_async()
+                self.cancelando = True
+                self.get_logger().info("Cancelando objetivo...")
+            return
+        if not self.vuelta_enviada:
+            if self.pose_inicio is None:
+                self.get_logger().warning('No hay pose de inicio, termino sin volver')
+                self.terminar()
+                return
+            else:
+                x, y, yaw = self.pose_inicio
+                enviado = self.ir_a(self.pose_de(x, y, yaw))
+                if enviado:
+                    self.vuelta_enviada = True
+                    return
+        if self.vuelta_enviada and (self.estado_nav == 'llego' or self.estado_nav == 'fallo'):
+            self.get_logger().info(f'Vuelta terminada: {self.estado_nav}')
+            self.terminar()
+            return
+
     def al_recibir_plan(self, plan):
         self.plan = plan
 
@@ -191,6 +250,7 @@ class Mision(Node):
     def terminar(self):
         """Publica en /done: termina la corrida (§5)."""
         self.pub_done.publish(Empty())
+        self.cambiar_estado('terminado')
 
 
 def main(args=None):
