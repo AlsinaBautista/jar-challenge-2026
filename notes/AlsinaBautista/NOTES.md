@@ -4,7 +4,91 @@ Module: mision
 
 One entry per decision: the question, what was tried, what was decided.
 
-## _(question)_
+Code: `src/equipo_jar/equipo_jar/mision.py` (the node), `confirmacion.py` (what to
+report), `exploracion.py` (where to go). Tunables: the `mision` section of
+`src/equipo_jar/params/params.yaml`.
 
-- Tried:
-- Decided:
+## When is a candidate good enough to report?
+
+- Tried: the spread per axis (square root of the covariance diagonal). It misses
+  tilted uncertainty ellipses: a candidate can look precise in x and in y and still
+  be far off along a diagonal.
+- Decided: report when `observaciones >= min_observaciones` (5) and the spread in
+  the worst direction (square root of the largest eigenvalue of `covarianza_xy`) is
+  `<= max_desvio_m` (0.10 m). The most precise candidates go first. Never more than
+  N reports.
+
+## How do we avoid reporting the same box twice?
+
+- Tried: remembering only the reported ids. Fusion can merge two candidates or
+  create one again with a new id, so the same box can come back with another id.
+- Decided: skip a candidate if its id was reported, or if it is within
+  `distancia_min_reportes_m` (0.40 m) of a reported point or of another candidate
+  picked in the same round. Candidates with a NaN or inf center are skipped:
+  `armar_reporte` would raise and kill the node.
+
+## What should fusion send?
+
+- Decided (mission side, matches `docs/team/INTERFACES.md`): every candidate fusion
+  thinks is a box, doubtful ones too, with an honest covariance and count. Mission
+  is the only filter: it knows the time and the reports left, and can go and look
+  at doubtful ones. Still to confirm with the fusion owners.
+
+## How does mission go through the coverage plan?
+
+- Tried: always going to the first pose of `/jar/plan_cobertura`. If coverage is
+  slow to drop a reached point, the robot goes back to it again and again.
+- Decided: mission keeps its own list of finished points and takes the first plan
+  pose that is not in it. Same point = within `distancia_mismo_punto_m` (0.30 m)
+  and facing within `angulo_mismo_punto_rad` (0.5 rad), because coverage may ask
+  for the same spot facing two ways. A point whose goal failed also counts as
+  finished (no endless retries). This works whether or not coverage drops reached
+  points.
+
+## How does mission talk to Nav2?
+
+- Decided: action `navigate_to_pose`, one goal at a time, with async callbacks.
+  Never wait inside a callback or a timer: the node has one thread and would freeze.
+  `estado_nav`: libre → enviando → yendo → llego / fallo. Any result other than
+  SUCCEEDED counts as a failure. To change goals, mission cancels the current one
+  and waits for its result before sending the next, so a late result can't
+  overwrite the state of the new goal.
+
+## How is the run organised?
+
+- Decided: a state machine run by a 10 Hz timer:
+  esperando_mapa → explorando → volviendo → terminado. Every state change is
+  logged. After /map, every tick also saves the start pose (if missing) and checks
+  reports. Nothing happens before /map, and nothing after /done.
+
+## Where is the start pose?
+
+- Tried: reading it when /map arrives. Localization needs the map before it
+  publishes `map → odom`, so at that moment the pose usually doesn't exist yet.
+- Decided: read `map → base_footprint` from TF on every tick after /map until it
+  works. The robot doesn't move before mission sends a goal, so the first pose
+  found is the start.
+
+## When does the robot go back?
+
+- Decided: at the first of: all N reported; no pending plan points and no goal in
+  progress; `tiempo_volver_s` (480 s) after /map. Having no plan yet is not a reason.
+  Mission cancels the current goal, waits for the cancel, then sends the start pose.
+  When that goal ends, reached or not, it publishes /done once. No start pose (no
+  TF) → /done right away.
+
+## Next
+
+- Use the leftover reports on the best doubtful candidates right before /done.
+- Never stay still for 60 s (the judge ends the run), for example while waiting
+  for a plan.
+- Go and look at doubtful candidates up close.
+
+## Testing without the other modules
+
+- `notes/AlsinaBautista/nav_falso.py`: fake `navigate_to_pose` server. It accepts
+  any goal, waits, answers succeeded (or aborted with `-p fallar:=true`) and
+  accepts cancels. Fake `/map`, plan, candidates and TF with `ros2 topic pub` and
+  `ros2 run tf2_ros static_transform_publisher`.
+- Unit tests (no ROS needed): `src/equipo_jar/test/test_confirmacion.py` and
+  `test_exploracion.py`.
