@@ -95,11 +95,29 @@ One entry per decision: the question, what was tried, what was decided.
 - Boxes in the practice worlds: 0.25 x 0.25 x 0.30 m, red diffuse (0.8, 0.05, 0.05),
   blue distractors (0.05, 0.05, 0.8). Pure hue, so the HSV ranges hold.
 
+## First measurement in the simulator (session 20261022-140046, maze_1_6x5, teleop)
+
+- Setup: `pruebas.launch.py` (map = odom fixed), robot driven by hand to both red boxes
+  and past a blue one, 9 min recording. Evaluated offline with
+  `notes/SantosBunge/analyze_bag.py`, which removes the odometry drift using the
+  simulator's ground truth (offline only, never in `src/`).
+- Detection error, drift removed: median 0.022 m (p90 0.027) on box 1 (572 obs,
+  0.4-1.0 m) and 0.016 m (p90 0.022) on box 2 (62 obs, 0.7-1.8 m). Radial bias under
+  1 cm: the face-to-center shift of 0.125 m is right. Zero observations near the blue
+  boxes, zero farther than 0.5 m from a red box.
+- As published (with drift): 0.19 m and 0.36 m. That is the mecanum odometry drifting
+  during a few minutes of teleop. Localization has to close it; detection cannot.
+- Reported sigma is conservative: |error| / sigma ≈ 0.2-0.3 in the simulator. Left as is
+  (the real camera and LiDAR are noisier); mission's 0.10 m threshold is still met after
+  a handful of observations once the robot has moved 0.3 m.
+- Fusion: two candidates, ids 1 and 2, stable for the whole session, never merged.
+  Candidate 1 became reportable only after the robot moved (single-view floor), as
+  designed.
+
 ## Next
 
-- Run on the simulation server and compare `/jar/observaciones` against the box
-  positions of the practice world (`tools/mundos.py`); tune `obs_sigma_*` so the
-  reported covariance matches the real error.
+- Repeat the measurement with localization (AMCL) instead of the fixed map = odom.
+- Decide with the team whether to tighten `obs_sigma_*` after seeing the real robot.
 - Confirm with AlsinaBautista that the 0.15 m single-view floor fits mission's policy.
 
 ## Testing without the simulator
