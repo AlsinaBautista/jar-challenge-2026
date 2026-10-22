@@ -19,8 +19,8 @@ from geometry_msgs.msg import PoseStamped
 from equipo_jar.comun import QOS_ESTADO, QOS_MAPA, correr, parametros_en_vivo
 from equipo_jar.reportes import armar_reporte
 from equipo_jar_msgs.msg import Candidatas
-from equipo_jar.confirmacion import elegir_para_reportar
-from equipo_jar.exploracion import yaw_de_cuaternion, primer_pendiente
+from equipo_jar.confirmacion import select_to_report
+from equipo_jar.exploracion import yaw_from_quaternion, first_pending
 
 from tf2_ros import Buffer, TransformListener, TransformException
 from rclpy.time import Time
@@ -34,32 +34,32 @@ class Mision(Node):
         # Cantidad de víctimas a buscar (N), que llega como argumento del launch (victimas:=N).
         self.declare_parameter('cantidad_victimas', 5)
         self.cantidad_victimas = self.get_parameter('cantidad_victimas').value
-        self.p = parametros_en_vivo(self, {'min_observaciones': 5, 'max_desvio_m': 0.10, 
-                                            'distancia_min_reportes_m': 0.40, 'distancia_mismo_punto_m': 0.30, 
-                                            'angulo_mismo_punto_rad': 0.5, 'tiempo_volver_s': 480.0})  # parámetros ajustables
+        self.p = parametros_en_vivo(self, {'min_observations': 5, 'max_deviation_m': 0.10, 
+                                            'min_report_distance_m': 0.40, 'same_point_distance_m': 0.30, 
+                                            'same_point_angle_rad': 0.5, 'return_time_s': 480.0})  # parámetros ajustables
 
         self.mapa = None
         self.plan = None
         self.candidatas = None
 
         self.t0 = None
-        self.create_timer(0.1, self.paso)
+        self.create_timer(0.1, self.step)
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        self.pose_inicio = None
+        self.start_pose = None
 
-        self.ids_reportados = set()
-        self.puntos_reportados = []
+        self.reported_ids = set()
+        self.reported_points = []
 
-        self.estado_nav = 'libre'
-        self.estado = 'esperando_mapa'
+        self.nav_state = 'idle'
+        self.state = 'waiting_for_map'
 
-        self.visitados = []
-        self.punto_actual = None
+        self.visited = []
+        self.current_point = None
 
-        self.vuelta_enviada = False
-        self.cancelando = False
+        self.return_sent = False
+        self.canceling = False
 
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
@@ -79,130 +79,130 @@ class Mision(Node):
             self.t0 = self.get_clock().now()
         self.mapa = mapa
 
-    def segundos_desde_t0(self):
+    def seconds_since_t0(self):
         if self.t0 is None:
             return None
-        ahora = self.get_clock().now()
-        transcurrido = ahora - self.t0
-        segundos = transcurrido.nanoseconds / 1e9
-        return float(segundos)
+        now = self.get_clock().now()
+        elapsed = now - self.t0
+        seconds = elapsed.nanoseconds / 1e9
+        return float(seconds)
 
-    def pose_actual(self):
+    def current_pose(self):
         try:
             pose = self.tf_buffer.lookup_transform('map', 'base_footprint', Time())
             x = pose.transform.translation.x
             y = pose.transform.translation.y
             q = pose.transform.rotation
-            yaw = yaw_de_cuaternion(q)
+            yaw = yaw_from_quaternion(q)
             return (x, y, yaw)
         except TransformException:
             return None
 
-    def revisar_reportes(self):
+    def check_reports(self):
         if self.candidatas is None:
             return
-        elegidas = elegir_para_reportar(self.candidatas, self.ids_reportados, self.puntos_reportados,
-                                        self.cantidad_victimas, self.p['min_observaciones'], 
-                                        self.p['max_desvio_m'], self.p['distancia_min_reportes_m'])
-        for c in elegidas:
+        selected = select_to_report(self.candidatas, self.reported_ids, self.reported_points,
+                                        self.cantidad_victimas, self.p['min_observations'], 
+                                        self.p['max_deviation_m'], self.p['min_report_distance_m'])
+        for c in selected:
             self.reportar_victima(c.centro.x, c.centro.y)
-            self.ids_reportados.add(c.id)
-            self.puntos_reportados.append((c.centro.x, c.centro.y))
-            i = len(self.puntos_reportados)
+            self.reported_ids.add(c.id)
+            self.reported_points.append((c.centro.x, c.centro.y))
+            i = len(self.reported_points)
             self.get_logger().info(f'Reporte {i}. id={c.id} x={c.centro.x :.2f} y={c.centro.y:.2f}')
 
-    def ir_a(self, pose):
+    def go_to(self, pose):
         if not self.navegacion.server_is_ready():
             self.get_logger().warn('!!! El servidor de navegacion no esta listo !!!', throttle_duration_sec=5.0)
             return False
-        objetivo = NavigateToPose.Goal()
-        objetivo.pose = pose
-        self.estado_nav = "enviando"
-        futuro = self.navegacion.send_goal_async(objetivo)
-        futuro.add_done_callback(self.al_responder_objetivo)
+        goal = NavigateToPose.Goal()
+        goal.pose = pose
+        self.nav_state = "sending"
+        future = self.navegacion.send_goal_async(goal)
+        future.add_done_callback(self.on_goal_response)
         return True
 
-    def al_responder_objetivo(self, futuro):
-        goal_handle = futuro.result()
+    def on_goal_response(self, future):
+        goal_handle = future.result()
         if not goal_handle.accepted:
-            self.estado_nav = 'fallo'
+            self.nav_state = 'failed'
             self.get_logger().warn('Fallo el objetivo')
             return
-        self.objetivo_actual = goal_handle
-        self.estado_nav = 'yendo'
-        goal_handle.get_result_async().add_done_callback(self.al_terminar_objetivo)
+        self.current_goal = goal_handle
+        self.nav_state = 'moving'
+        goal_handle.get_result_async().add_done_callback(self.on_goal_result)
 
-    def al_terminar_objetivo(self, futuro):
-        estado = futuro.result().status
-        if estado == GoalStatus.STATUS_SUCCEEDED:
-            self.estado_nav = 'llego'
+    def on_goal_result(self, future):
+        status = future.result().status
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            self.nav_state = 'arrived'
             self.get_logger().info('Status succeded')
         else:
-            self.estado_nav = 'fallo'
+            self.nav_state = 'failed'
             self.get_logger().info('Status failed')
 
-    def cambiar_estado(self, nuevo):
-        self.get_logger().info(f'Estado: <{self.estado}> -> <{nuevo}>')
-        self.estado = nuevo
+    def change_state(self, new_state):
+        self.get_logger().info(f'Estado: <{self.state}> -> <{new_state}>')
+        self.state = new_state
 
-    def paso(self):
-        if self.estado == 'esperando_mapa':
+    def step(self):
+        if self.state == 'waiting_for_map':
             if self.t0 is not None:
-                self.cambiar_estado('explorando')
+                self.change_state('exploring')
             return
-        if self.estado == 'terminado':
+        if self.state == 'finished':
             return
-        if self.pose_inicio is None:
-            pose = self.pose_actual()
+        if self.start_pose is None:
+            pose = self.current_pose()
             if pose is not None:
-                self.pose_inicio = pose
+                self.start_pose = pose
                 x, y, yaw = pose
                 self.get_logger().info(f'Pose de inicio: x={x:.2f} y={y:.2f} yaw={yaw:.2f}')
-        self.revisar_reportes()
-        if self.estado == 'explorando':
-            motivo = self.motivo_para_volver()
-            if motivo is not None:
-                self.get_logger().info(f'Vuelvo: {motivo}')
-                self.cambiar_estado('volviendo')
+        self.check_reports()
+        if self.state == 'exploring':
+            reason = self.reason_to_return()
+            if reason is not None:
+                self.get_logger().info(f'Vuelvo: {reason}')
+                self.change_state('returning')
             else:
-                self.explorar()
-        if self.estado == 'volviendo':
-            self.volver()
+                self.explore()
+        if self.state == 'returning':
+            self.return_to_start()
 
-    def explorar(self):
-        if self.estado_nav == 'enviando' or self.estado_nav == 'yendo':
+    def explore(self):
+        if self.nav_state == 'sending' or self.nav_state == 'moving':
             return
-        if self.estado_nav == 'llego' or self.estado_nav == 'fallo':
-            x = self.punto_actual.pose.position.x
-            y = self.punto_actual.pose.position.y
-            yaw = yaw_de_cuaternion(self.punto_actual.pose.orientation)
-            self.visitados.append((x, y, yaw))
-            self.punto_actual = None
-            self.estado_nav = 'libre'
+        if self.nav_state == 'arrived' or self.nav_state == 'failed':
+            x = self.current_point.pose.position.x
+            y = self.current_point.pose.position.y
+            yaw = yaw_from_quaternion(self.current_point.pose.orientation)
+            self.visited.append((x, y, yaw))
+            self.current_point = None
+            self.nav_state = 'idle'
         if self.plan is None:
             return
-        punto = primer_pendiente(self.plan.poses, self.visitados, self.p['distancia_mismo_punto_m'], self.p['angulo_mismo_punto_rad'])
-        if punto is None:
+        point = first_pending(self.plan.poses, self.visited, self.p['same_point_distance_m'], self.p['same_point_angle_rad'])
+        if point is None:
             return
-        enviado = self.ir_a(punto)
-        if enviado:
-            self.punto_actual = punto
-            q = punto.pose.orientation
-            yaw = yaw_de_cuaternion(q)
-            self.get_logger().info(f'Punto actual: ({punto.pose.position.x}, {punto.pose.position.y}, {yaw})')
+        sent = self.go_to(point)
+        if sent:
+            self.current_point = point
+            q = point.pose.orientation
+            yaw = yaw_from_quaternion(q)
+            self.get_logger().info(f'Punto actual: ({point.pose.position.x}, {point.pose.position.y}, {yaw})')
 
-    def motivo_para_volver(self):
-        if len(self.puntos_reportados) >= self.cantidad_victimas:
+    def reason_to_return(self):
+        if len(self.reported_points) >= self.cantidad_victimas:
             return 'todas reportadas'
-        elif self.segundos_desde_t0() >= self.p['tiempo_volver_s']:
+        elif self.seconds_since_t0() >= self.p['return_time_s']:
             return 'se termina el tiempo'
-        elif (self.plan is not None and self.estado_nav != 'enviando' and self.estado_nav != 'yendo' 
-                and primer_pendiente(self.plan.poses, self.visitados, self.p['distancia_mismo_punto_m'], 
-                    self.p['angulo_mismo_punto_rad']) is None):
+        elif (self.plan is not None and self.nav_state != 'sending' and self.nav_state != 'moving' 
+                and first_pending(self.plan.poses, self.visited, self.p['same_point_distance_m'], 
+                    self.p['same_point_angle_rad']) is None):
             return 'no quedan puntos'
         return None
 
-    def pose_de(self, x, y, yaw):
+    def make_pose(self, x, y, yaw):
         pose = PoseStamped()
         pose.header.frame_id = 'map'
         pose.header.stamp = self.get_clock().now().to_msg()
@@ -212,28 +212,28 @@ class Mision(Node):
         pose.pose.orientation.w = math.cos(yaw / 2)
         return pose
 
-    def volver(self):
-        if self.estado_nav == 'enviando':
+    def return_to_start(self):
+        if self.nav_state == 'sending':
             return
-        if self.estado_nav == 'yendo' and not self.vuelta_enviada:
-            if not self.cancelando:
-                self.objetivo_actual.cancel_goal_async()
-                self.cancelando = True
+        if self.nav_state == 'moving' and not self.return_sent:
+            if not self.canceling:
+                self.current_goal.cancel_goal_async()
+                self.canceling = True
                 self.get_logger().info("Cancelando objetivo...")
             return
-        if not self.vuelta_enviada:
-            if self.pose_inicio is None:
+        if not self.return_sent:
+            if self.start_pose is None:
                 self.get_logger().warning('No hay pose de inicio, termino sin volver')
                 self.terminar()
                 return
             else:
-                x, y, yaw = self.pose_inicio
-                enviado = self.ir_a(self.pose_de(x, y, yaw))
-                if enviado:
-                    self.vuelta_enviada = True
+                x, y, yaw = self.start_pose
+                sent = self.go_to(self.make_pose(x, y, yaw))
+                if sent:
+                    self.return_sent = True
                     return
-        if self.vuelta_enviada and (self.estado_nav == 'llego' or self.estado_nav == 'fallo'):
-            self.get_logger().info(f'Vuelta terminada: {self.estado_nav}')
+        if self.return_sent and (self.nav_state == 'arrived' or self.nav_state == 'failed'):
+            self.get_logger().info(f'Vuelta terminada: {self.nav_state}')
             self.terminar()
             return
 
@@ -250,7 +250,7 @@ class Mision(Node):
     def terminar(self):
         """Publica en /done: termina la corrida (§5)."""
         self.pub_done.publish(Empty())
-        self.cambiar_estado('terminado')
+        self.change_state('finished')
 
 
 def main(args=None):

@@ -23,7 +23,7 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 - Tried: remembering only the reported ids. Fusion can merge two candidates or
   create one again with a new id, so the same box can come back with another id.
 - Decided: skip a candidate if its id was reported, or if it is within
-  `distancia_min_reportes_m` (0.40 m) of a reported point or of another candidate
+  `min_report_distance_m` (0.40 m) of a reported point or of another candidate
   picked in the same round. Candidates with a NaN or inf center are skipped:
   `armar_reporte` would raise and kill the node.
 
@@ -39,8 +39,8 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 - Tried: always going to the first pose of `/jar/plan_cobertura`. If coverage is
   slow to drop a reached point, the robot goes back to it again and again.
 - Decided: mission keeps its own list of finished points and takes the first plan
-  pose that is not in it. Same point = within `distancia_mismo_punto_m` (0.30 m)
-  and facing within `angulo_mismo_punto_rad` (0.5 rad), because coverage may ask
+  pose that is not in it. Same point = within `same_point_distance_m` (0.30 m)
+  and facing within `same_point_angle_rad` (0.5 rad), because coverage may ask
   for the same spot facing two ways. A point whose goal failed also counts as
   finished (no endless retries). This works whether or not coverage drops reached
   points.
@@ -49,7 +49,7 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 
 - Decided: action `navigate_to_pose`, one goal at a time, with async callbacks.
   Never wait inside a callback or a timer: the node has one thread and would freeze.
-  `estado_nav`: libre → enviando → yendo → llego / fallo. Any result other than
+  `nav_state`: idle → sending → moving → arrived / failed. Any result other than
   SUCCEEDED counts as a failure. To change goals, mission cancels the current one
   and waits for its result before sending the next, so a late result can't
   overwrite the state of the new goal.
@@ -57,7 +57,7 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 ## How is the run organised?
 
 - Decided: a state machine run by a 10 Hz timer:
-  esperando_mapa → explorando → volviendo → terminado. Every state change is
+  waiting_for_map → exploring → returning → finished. Every state change is
   logged. After /map, every tick also saves the start pose (if missing) and checks
   reports. Nothing happens before /map, and nothing after /done.
 
@@ -72,7 +72,7 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 ## When does the robot go back?
 
 - Decided: at the first of: all N reported; no pending plan points and no goal in
-  progress; `tiempo_volver_s` (480 s) after /map. Having no plan yet is not a reason.
+  progress; `return_time_s` (480 s) after /map. Having no plan yet is not a reason.
   Mission cancels the current goal, waits for the cancel, then sends the start pose.
   When that goal ends, reached or not, it publishes /done once. No start pose (no
   TF) → /done right away.
