@@ -58,6 +58,13 @@ class Fusion(Node):
         self.get_logger().info('Fusion ready: /jar/observaciones -> /jar/candidatas')
 
     def on_observation(self, msg):
+        """One observation from detection. Any unexpected error is logged, never fatal."""
+        try:
+            self._process_observation(msg)
+        except Exception as e:  # noqa: BLE001  (deliberate: a crashed node is never restarted)
+            self.get_logger().error(f'observation skipped: {type(e).__name__}: {e}', throttle_duration_sec=5.0)
+
+    def _process_observation(self, msg):
         stamp = Time.from_msg(msg.header.stamp)
         t = stamp.nanoseconds * 1e-9
         sigma = max(float(msg.pose.covariance[0]), 1e-6) ** 0.5

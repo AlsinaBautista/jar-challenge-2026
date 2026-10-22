@@ -147,7 +147,17 @@ class Detection(Node):
     # ------------------------------------------------------------------ pipeline
 
     def on_pair(self, img_msg, scan_msg):
-        """Main callback: one image and one scan with close timestamps."""
+        """Main callback: one image and one scan with close timestamps.
+
+        Nothing may kill this node during a run (a crashed node is never restarted), so any
+        unexpected error in one frame is logged and the frame is skipped.
+        """
+        try:
+            self._process_pair(img_msg, scan_msg)
+        except Exception as e:  # noqa: BLE001  (deliberate: survive any single bad frame)
+            self.get_logger().error(f'frame skipped: {type(e).__name__}: {e}', throttle_duration_sec=5.0)
+
+    def _process_pair(self, img_msg, scan_msg):
         img_stamp = Time.from_msg(img_msg.header.stamp)
         scan_stamp = Time.from_msg(scan_msg.header.stamp)
         t = scan_stamp.nanoseconds * 1e-9
@@ -212,7 +222,7 @@ class Detection(Node):
 
             # --- fallback: depth cloud median ---
             if face_robot is None and self.p['use_cloud_fallback']:
-                face_robot = self._face_from_cloud(blob, bgr.shape, vp, robot_frame, scan_stamp)
+                face_robot = self._face_from_cloud(blob, bgr.shape, vp, cam_frame, robot_frame, scan_stamp)
                 source = 'cloud'
             if face_robot is None:
                 continue
@@ -237,7 +247,7 @@ class Detection(Node):
             self.get_logger().debug(
                 f'obs ({source}): ({center_map[0]:.2f}, {center_map[1]:.2f}) d={distance:.2f} sigma={sigma:.3f}')
 
-    def _face_from_cloud(self, blob, shape, vp, robot_frame, stamp):
+    def _face_from_cloud(self, blob, shape, vp, cam_frame, robot_frame, stamp):
         """Fallback: median of the cloud points inside the blob, in the robot frame, or None."""
         cloud = self.last_cloud
         if cloud is None:
@@ -245,23 +255,56 @@ class Detection(Node):
         cloud_stamp = Time.from_msg(cloud.header.stamp)
         if abs((cloud_stamp - stamp).nanoseconds) * 1e-9 > float(self.p['cloud_max_age_s']):
             return None
-        points = self._cloud_as_image(cloud, shape)
-        if points is None:
+        result = self._cloud_as_image(cloud, shape, cam_frame, cloud_stamp)
+        if result is None:
             return None
+        points, points_frame = result
         m = vision.blob_mask(blob, shape, vp.erosion_px)
         p_cloud = vision.robust_3d_point(points, m, vp)
         if p_cloud is None:
             return None
-        return self._transform(p_cloud, cloud.header.frame_id, robot_frame, cloud_stamp)
+        return self._transform(p_cloud, points_frame, robot_frame, cloud_stamp)
 
-    def _cloud_as_image(self, cloud_msg, shape):
-        """Cloud as a pixel-indexable (H, W, 3) array: direct reshape if organized, else projected with K."""
+    def _cloud_as_image(self, cloud_msg, shape, cam_frame, cloud_stamp):
+        """Cloud as a pixel-indexable (H, W, 3) array, plus the frame its points are in.
+
+        - Organized and the same size as the image: direct reshape, points stay in the cloud's
+          own frame.
+        - Otherwise (the real robot's cloud is unorganized, in `cam_1_depth_frame`, which is
+          NOT an optical frame): the points are first moved into the color optical frame with
+          TF, then projected with K onto the image grid. The result is in `cam_frame`.
+        """
         structured = point_cloud2.read_points(cloud_msg, field_names=('x', 'y', 'z'), skip_nans=False)
-        xyz = rfn.structured_to_unstructured(structured).astype(np.float32)
+        xyz = rfn.structured_to_unstructured(structured).astype(np.float32).reshape(-1, 3)
         height, width = shape[:2]
         if cloud_msg.height == height and cloud_msg.width == width:
-            return xyz.reshape(height, width, 3)
-        return vision.cloud_to_image(xyz.reshape(-1, 3), self.K, shape)
+            return xyz.reshape(height, width, 3), cloud_msg.header.frame_id
+        cloud_frame = cloud_msg.header.frame_id
+        if cloud_frame != cam_frame:
+            try:
+                tr = self.tf_buffer.lookup_transform(
+                    cam_frame, cloud_frame, cloud_stamp, timeout=Duration(seconds=0.1))
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException,
+                    tf2_ros.ExtrapolationException) as e:
+                self.get_logger().warn(
+                    f'no transform {cloud_frame} -> {cam_frame}: {e}', throttle_duration_sec=5.0)
+                return None
+            R, t = self._rotation_and_translation(tr)
+            xyz = (xyz @ R.T + t).astype(np.float32)      # all points at once, no per-point calls
+        return vision.cloud_to_image(xyz, self.K, shape), cam_frame
+
+    @staticmethod
+    def _rotation_and_translation(tr):
+        """TransformStamped -> (3x3 rotation matrix, translation vector)."""
+        q = tr.transform.rotation
+        x, y, z, w = q.x, q.y, q.z, q.w
+        R = np.array([
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ])
+        t = np.array([tr.transform.translation.x, tr.transform.translation.y, tr.transform.translation.z])
+        return R, t
 
     # ------------------------------------------------------------------ tf helpers
 

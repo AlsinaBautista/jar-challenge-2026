@@ -82,13 +82,25 @@ One entry per decision: the question, what was tried, what was decided.
   path the template documents). The remaining `package.xml` additions
   (tf2_geometry_msgs, sensor_msgs_py, message_filters, numpy) ship with ros-base.
 
+## Robot facts checked in the simulator repo (yahboom_rosmaster @ jar2026-v1, 2026-10-22)
+
+- Camera: `cam_1_color_optical_frame`, 320x240 `rgb8`, fx = fy = 271.809, cx = 158.719,
+  cy = 120.092, mounted level (rpy 0 0 0) at x = 0.057 m, z = 0.0376 m above base_link
+  (0.107 m above the floor). The macro default pitch of 0.5 rad is not used.
+- LiDAR: `laser_link` at x = 0.0435, z = 0.11 m above base_link (0.18 m above the floor),
+  yaw = pi. base_link is 0.0714 m above base_footprint.
+- Depth cloud: frame `cam_1_depth_frame` (x forward, not an optical frame), unorganized,
+  valid from 0.6 m, ~38 % valid points. The fallback therefore moves the cloud into the
+  color optical frame with TF before projecting it with K (`_cloud_as_image`).
+- Boxes in the practice worlds: 0.25 x 0.25 x 0.30 m, red diffuse (0.8, 0.05, 0.05),
+  blue distractors (0.05, 0.05, 0.8). Pure hue, so the HSV ranges hold.
+
 ## Next
 
 - Run on the simulation server and compare `/jar/observaciones` against the box
   positions of the practice world (`tools/mundos.py`); tune `obs_sigma_*` so the
   reported covariance matches the real error.
 - Confirm with AlsinaBautista that the 0.15 m single-view floor fits mission's policy.
-- Check `cam_1_color_optical_frame` and `laser_link` are in `/tf_static` of the sim.
 
 ## Testing without the simulator
 
