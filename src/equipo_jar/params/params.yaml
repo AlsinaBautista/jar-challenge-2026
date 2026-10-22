@@ -100,3 +100,11 @@ mision:
     min_observations_final: 1
     max_deviation_final_m: 0.30
     finish_time_s: 570.0
+    idle_spin_s: 10.0
+    idle_spin_rad: 1.57
+    visit_min_observations: 2
+    visit_distance_m: 0.8
+    visit_clearance_m: 0.25
+    visit_angles: 12
+    visit_min_shift_m: 0.4
+    visit_box_margin_m: 0.25

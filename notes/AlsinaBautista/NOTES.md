@@ -116,6 +116,16 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 - Needs from navigation (hans-die): a goal at the current position with another
   heading must make Nav2 turn in place.
 
+## Who picks where to look at a doubtful candidate?
+
+- Options: coverage (mission asks it through a service, a new `.srv` in
+  `equipo_jar_msgs`) or mission itself, from `/map`.
+- Decided (agreed with marcorita): mission. Coverage's main job, the plan, is the
+  one still missing, and a service adds an interface change and one more thing that
+  can fail. The map functions (`cell_value`, `is_free`, `line_is_clear`) go in
+  `src/equipo_jar/equipo_jar/mapa.py` so coverage can use them too. If coverage
+  writes similar ones, we merge them into one file.
+
 ## Next
 
 - Go and look at doubtful candidates up close.
