@@ -21,4 +21,4 @@ propose it as an interface change.
   `docker cp notes/AlsinaBautista/nav_falso.py jar:/tmp/nav_falso.py`.
   When asking him to test, give the exact command for every terminal.
 - Unit tests in Docker:
-  `docker run --rm -v "$PWD/src/equipo_jar":/prueba -w /prueba equipo-jar python3 -m pytest test/test_confirmacion.py test/test_exploracion.py -v`
+  `docker run --rm -v "$PWD/src/equipo_jar":/prueba -w /prueba equipo-jar python3 -m pytest test/test_confirmacion.py test/test_exploracion.py test/test_mapa.py test/test_inspeccion.py -v`

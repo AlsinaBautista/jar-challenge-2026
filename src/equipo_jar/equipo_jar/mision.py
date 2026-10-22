@@ -21,6 +21,7 @@ from equipo_jar.reportes import armar_reporte
 from equipo_jar_msgs.msg import Candidatas
 from equipo_jar.confirmacion import select_to_report
 from equipo_jar.exploracion import yaw_from_quaternion, first_pending
+from equipo_jar.inspeccion import pick_doubtful, viewpoint_for
 
 from tf2_ros import Buffer, TransformListener, TransformException
 from rclpy.time import Time
@@ -38,7 +39,10 @@ class Mision(Node):
                                             'min_report_distance_m': 0.40, 'same_point_distance_m': 0.30, 
                                             'same_point_angle_rad': 0.5, 'return_time_s': 480.0,
                                             'min_observations_final': 1, 'max_deviation_final_m': 0.30, 
-                                            'finish_time_s': 570.0, 'idle_spin_s': 10.0, 'idle_spin_rad': 1.57})  # parámetros ajustables
+                                            'finish_time_s': 570.0, 'idle_spin_s': 10.0, 'idle_spin_rad': 1.57,
+                                            'visit_min_observations': 2, 'visit_distance_m': 0.8, 
+                                            'visit_clearance_m': 0.25, 'visit_angles': 12, 
+                                            'visit_min_shift_m': 0.4, 'visit_box_margin_m': 0.25})  # parámetros ajustables
 
         self.mapa = None
         self.plan = None
@@ -53,6 +57,7 @@ class Mision(Node):
 
         self.reported_ids = set()
         self.reported_points = []
+        self.inspected_points = []
 
         self.nav_state = 'idle'
         self.state = 'waiting_for_map'
@@ -198,6 +203,8 @@ class Mision(Node):
                 self.visited.append((x, y, yaw))
             self.current_point = None
             self.nav_state = 'idle'
+        if self.inspect_doubtful():
+            return
         if self.plan is None:
             self.spin_if_idle()
             return
@@ -236,8 +243,8 @@ class Mision(Node):
             return 'se termina el tiempo'
         elif (self.plan is not None and self.nav_state != 'sending' and self.nav_state != 'moving' 
                 and first_pending(self.plan.poses, self.visited, self.p['same_point_distance_m'], 
-                    self.p['same_point_angle_rad']) is None):
-            return 'no quedan puntos'
+                    self.p['same_point_angle_rad']) is None and self.next_doubtful() is None):
+            return 'no quedan puntos ni dudosas'
         return None
 
     def make_pose(self, x, y, yaw):
@@ -274,6 +281,36 @@ class Mision(Node):
             self.get_logger().info(f'Vuelta terminada: {self.nav_state}')
             self.terminar()
             return
+
+    def next_doubtful(self):
+        if self.candidatas is None:
+            return None
+        pose = self.current_pose()
+        if pose is None:
+            return None
+        return pick_doubtful(self.candidatas, self.reported_ids, self.reported_points, self.inspected_points, 
+                            self.p['visit_min_observations'], self.p['min_report_distance_m'], pose[0], pose[1])
+
+    def inspect_doubtful(self):
+        c = self.next_doubtful()
+        if c is None:
+            return False
+        x_robot, y_robot, _ = self.current_pose()
+        view = viewpoint_for(self.mapa, c.centro.x, c.centro.y, x_robot, y_robot, self.p['visit_distance_m'], 
+                            self.p['visit_clearance_m'], self.p['visit_angles'], self.p['visit_min_shift_m'],
+                            self.p['visit_box_margin_m'])
+        if view is None:
+            self.get_logger().info(f'Candidata id: {c.id}. Sin lugar para mirarla')
+            self.inspected_points.append((c.centro.x, c.centro.y))
+            return False
+        else:
+            x, y, yaw = view
+            if self.go_to(self.make_pose(x, y, yaw)):
+                self.inspected_points.append((c.centro.x, c.centro.y))
+                self.get_logger().info(f'Voy a mirar la candidata id={c.id} desde ({x:.2f},{y:.2f})')
+                self.idle_since = None
+                return True
+        return False
 
     def al_recibir_plan(self, plan):
         self.plan = plan
