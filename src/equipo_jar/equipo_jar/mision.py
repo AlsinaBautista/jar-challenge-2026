@@ -36,7 +36,9 @@ class Mision(Node):
         self.cantidad_victimas = self.get_parameter('cantidad_victimas').value
         self.p = parametros_en_vivo(self, {'min_observations': 5, 'max_deviation_m': 0.10, 
                                             'min_report_distance_m': 0.40, 'same_point_distance_m': 0.30, 
-                                            'same_point_angle_rad': 0.5, 'return_time_s': 480.0})  # parámetros ajustables
+                                            'same_point_angle_rad': 0.5, 'return_time_s': 480.0,
+                                            'min_observations_final': 1, 'max_deviation_final_m': 0.30, 
+                                            'finish_time_s': 570.0})  # parámetros ajustables
 
         self.mapa = None
         self.plan = None
@@ -57,6 +59,7 @@ class Mision(Node):
 
         self.visited = []
         self.current_point = None
+        self.current_goal = None
 
         self.return_sent = False
         self.canceling = False
@@ -98,12 +101,12 @@ class Mision(Node):
         except TransformException:
             return None
 
-    def check_reports(self):
+    def check_reports(self, min_obs, max_deviation):
         if self.candidatas is None:
             return
         selected = select_to_report(self.candidatas, self.reported_ids, self.reported_points,
-                                        self.cantidad_victimas, self.p['min_observations'], 
-                                        self.p['max_deviation_m'], self.p['min_report_distance_m'])
+                                        self.cantidad_victimas, min_obs, 
+                                        max_deviation, self.p['min_report_distance_m'])
         for c in selected:
             self.reportar_victima(c.centro.x, c.centro.y)
             self.reported_ids.add(c.id)
@@ -127,6 +130,9 @@ class Mision(Node):
         if not goal_handle.accepted:
             self.nav_state = 'failed'
             self.get_logger().warn('Fallo el objetivo')
+            return
+        if self.state == 'finishing' or self.state == 'finished':
+            goal_handle.cancel_goal_async()
             return
         self.current_goal = goal_handle
         self.nav_state = 'moving'
@@ -152,13 +158,23 @@ class Mision(Node):
             return
         if self.state == 'finished':
             return
+        if self.state == 'finishing':
+            self.pub_done.publish(Empty())
+            self.change_state('finished')
+            return
         if self.start_pose is None:
             pose = self.current_pose()
             if pose is not None:
                 self.start_pose = pose
                 x, y, yaw = pose
                 self.get_logger().info(f'Pose de inicio: x={x:.2f} y={y:.2f} yaw={yaw:.2f}')
-        self.check_reports()
+        if self.seconds_since_t0() >= self.p['finish_time_s']:
+            self.get_logger().info('Se termina el tiempo de la corrida')
+            if self.nav_state == 'moving':
+                self.current_goal.cancel_goal_async()
+            self.terminar()
+            return
+        self.check_reports(self.p['min_observations'], self.p['max_deviation_m'])
         if self.state == 'exploring':
             reason = self.reason_to_return()
             if reason is not None:
@@ -249,8 +265,8 @@ class Mision(Node):
 
     def terminar(self):
         """Publica en /done: termina la corrida (§5)."""
-        self.pub_done.publish(Empty())
-        self.change_state('finished')
+        self.check_reports(self.p['min_observations_final'], self.p['max_deviation_final_m'])
+        self.change_state('finishing')
 
 
 def main(args=None):

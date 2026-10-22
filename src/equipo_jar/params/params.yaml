@@ -97,3 +97,6 @@ mision:
     same_point_distance_m: 0.30
     same_point_angle_rad: 0.5
     return_time_s: 480.0
+    min_observations_final: 1
+    max_deviation_final_m: 0.30
+    finish_time_s: 570.0
