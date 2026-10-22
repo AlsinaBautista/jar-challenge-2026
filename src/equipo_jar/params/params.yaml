@@ -9,10 +9,86 @@
 # posicion_ (docs/team/INTERFACES.md).
 cobertura:
   ros__parameters: {}
+
+# Detection: red in the camera + LiDAR range -> /jar/observaciones. All values apply live.
+# Ranges and reasoning for each one: vision.py and deteccion.py (#PARAM comments).
 deteccion:
-  ros__parameters: {}
+  ros__parameters:
+    # Red in OpenCV HSV (H in [0,180), S and V in [0,255]); two ranges because red wraps at 0.
+    # Lists of 3 on purpose: the CI rejects numeric lists of 4 or more.
+    #PARAM: first thing to retune under the venue's lighting.
+    hsv_red_low_1: [0, 100, 60]
+    hsv_red_high_1: [10, 255, 255]
+    hsv_red_low_2: [170, 100, 60]
+    hsv_red_high_2: [180, 255, 255]
+    #PARAM: morphology kernel (odd, >= 1; 1 disables). 3 at 320x240.
+    morphology_kernel_px: 3
+    #PARAM: min contour area, px (> 0). A 0.25 m box at 4 m is ~290 px here.
+    min_area_px: 80
+    #PARAM: width/height of the bounding box (0 < min < 1 <= max). Box face is 0.25 x 0.30.
+    aspect_min: 0.4
+    aspect_max: 1.8
+    #PARAM: area / convex hull ((0, 1]). A box is convex.
+    min_solidity: 0.85
+    #PARAM: box side, m (> 0). Sim: 0.25. Real box TO BE CONFIRMED with the organizers.
+    box_side_m: 0.25
+    #PARAM: tolerance of the area-vs-distance check (> 1; 0 disables).
+    max_area_factor: 3.0
+    #PARAM: extra half-angle around the blob when picking LiDAR beams, rad (>= 0).
+    wedge_margin_rad: 0.03
+    #PARAM: LiDAR points within this of the nearest one are "the box", m (> 0; ~box side).
+    lidar_cluster_depth_m: 0.30
+    #PARAM: minimum LiDAR points on the box (>= 1).
+    lidar_min_points: 3
+    #PARAM: use the depth cloud when the LiDAR finds nothing in the wedge.
+    use_cloud_fallback: true
+    #PARAM: max age of the cloud relative to the scan, s (> 0).
+    cloud_max_age_s: 0.5
+    #PARAM: blob edge not read from the cloud, px (>= 0).
+    erosion_px: 2
+    #PARAM: valid cloud distances, m (0 < min < max). The real sensor is valid from 0.6 m.
+    z_min_m: 0.6
+    z_max_m: 4.0
+    #PARAM: minimum valid cloud points inside the blob (>= 1).
+    min_3d_points: 15
+    #PARAM: per-observation std handed to fusion: sigma = base + per_m * distance (both >= 0).
+    obs_sigma_base_m: 0.05
+    obs_sigma_per_m: 0.03
+    #PARAM: image+scan pairs processed per second (> 0, <= camera rate).
+    processing_rate_hz: 5.0
+    #PARAM: max image-scan timestamp gap to pair them, s (> 0; LiDAR period is ~0.14 s).
+    #       Read at startup only.
+    sync_tolerance_s: 0.1
+    #PARAM: robot base frame in /tf (base_footprint on this robot).
+    robot_frame: base_footprint
+    #PARAM: frame used to bridge image time and scan time (odom: smooth, always available).
+    fixed_frame: odom
+    #PARAM: publish /jar/deteccion/debug (costs CPU; false in competition). Startup only.
+    publish_debug: false
+
+# Fusion: /jar/observaciones -> /jar/candidatas with an honest covariance. All values apply live.
+# Ranges and reasoning: candidate_fusion.py (#PARAM comments).
 fusion:
-  ros__parameters: {}
+  ros__parameters:
+    #PARAM: radius to attach an observation to a candidate, m (0.15 < v < 0.5).
+    association_dist_m: 0.4
+    #PARAM: candidates closer than this merge, m (0 < v <= association_dist_m).
+    merge_dist_m: 0.3
+    #PARAM: robot displacement needed to lift the single-view floor, m (>= 0; 0 disables).
+    min_baseline_m: 0.3
+    #PARAM: covariance floor (std) while seen from one spot, m (> mission's max_desvio_m).
+    single_view_sigma_m: 0.15
+    #PARAM: seconds without observations before a weak candidate is dropped (> 0).
+    stale_timeout_s: 20.0
+    #PARAM: candidates with at least this many observations are never dropped (>= 1).
+    min_obs_to_keep: 5
+    #PARAM: robot poses kept per candidate for the baseline (>= 2).
+    max_poses: 50
+    #PARAM: robot base frame in /tf.
+    robot_frame: base_footprint
+    #PARAM: min seconds between "changed" publications (0 < v < 1).
+    publish_min_period_s: 0.2
+
 mision:
   ros__parameters: 
     min_observations: 5
