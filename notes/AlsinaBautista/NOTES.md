@@ -32,7 +32,12 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 - Decided (mission side, matches `docs/team/INTERFACES.md`): every candidate fusion
   thinks is a box, doubtful ones too, with an honest covariance and count. Mission
   is the only filter: it knows the time and the reports left, and can go and look
-  at doubtful ones. Still to confirm with the fusion owners.
+  at doubtful ones.
+- Confirmed with fusion (SantosBunge, merged in `development`): it sends exactly
+  that. While a box has been seen only from robot poses less than 0.3 m apart, its
+  spread stays at 0.15 m or more, above `max_deviation_m`, so mission reports a box
+  only after seeing it from two places. Checked by feeding fusion's code into
+  `select_to_report`.
 
 ## How does mission go through the coverage plan?
 
@@ -57,7 +62,7 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 ## How is the run organised?
 
 - Decided: a state machine run by a 10 Hz timer:
-  waiting_for_map → exploring → returning → finished. Every state change is
+  waiting_for_map → exploring → returning → finishing → finished. Every state change is
   logged. After /map, every tick also saves the start pose (if missing) and checks
   reports. Nothing happens before /map, and nothing after /done.
 
@@ -74,12 +79,34 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 - Decided: at the first of: all N reported; no pending plan points and no goal in
   progress; `return_time_s` (480 s) after /map. Having no plan yet is not a reason.
   Mission cancels the current goal, waits for the cancel, then sends the start pose.
-  When that goal ends, reached or not, it publishes /done once. No start pose (no
-  TF) → /done right away.
+  When that goal ends, reached or not, the run ends (see below). No start pose (no
+  TF) → it ends right away.
+
+## What happens to the reports left at the end?
+
+- Unused reports are worth 0. A report on a doubtful candidate can only add points:
+  far from every box it scores 0, near a box already scored it changes nothing
+  (each box keeps its best report), and the fast bonus is already lost if fewer
+  than N were reported.
+- Decided: right before /done, one last round with looser thresholds:
+  `min_observations_final` (1) and `max_deviation_final_m` (0.30 m). It uses the
+  same function as the normal round (`check_reports` takes the thresholds), so it
+  never goes over N and never repeats a box. It runs at the end and not when the
+  return starts, because the camera keeps looking on the way back.
+
+## How does the run always end?
+
+- Problem: /done only went out when the return goal ended. If Nav2 hangs, the run
+  reaches 10 min without /done and without the final round.
+- Decided: at `finish_time_s` (570 s) after /map, from exploring or returning,
+  mission cancels the current goal (the robot must not move after /done) and ends
+  the run. A goal accepted after that is cancelled as soon as it is accepted.
+- Ending = final round of reports, state `finishing`, then /done on the next tick.
+  /victimas and /done are different topics and ROS does not guarantee the order
+  between them; one tick (0.1 s) lets the reports arrive first.
 
 ## Next
 
-- Use the leftover reports on the best doubtful candidates right before /done.
 - Never stay still for 60 s (the judge ends the run), for example while waiting
   for a plan.
 - Go and look at doubtful candidates up close.
