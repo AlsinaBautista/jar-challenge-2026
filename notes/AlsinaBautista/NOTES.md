@@ -105,10 +105,19 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
   /victimas and /done are different topics and ROS does not guarantee the order
   between them; one tick (0.1 s) lets the reports arrive first.
 
+## How does mission avoid standing still?
+
+- Problem: the judge ends the run after 60 s without moving or turning. With no
+  plan from coverage, mission had nothing to send and the robot waited still.
+- Decided: after `idle_spin_s` (10 s) with nothing to send, mission sends a goal at
+  the robot's own position, turned `idle_spin_rad` (90°). Nav2 turns in place, and
+  each turn also sweeps the camera (61° wide) for boxes. Turns are not plan points:
+  they never go into the list of finished points.
+- Needs from navigation (hans-die): a goal at the current position with another
+  heading must make Nav2 turn in place.
+
 ## Next
 
-- Never stay still for 60 s (the judge ends the run), for example while waiting
-  for a plan.
 - Go and look at doubtful candidates up close.
 
 ## Testing without the other modules

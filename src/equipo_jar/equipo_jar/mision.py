@@ -211,6 +211,7 @@ class Mision(Node):
             q = point.pose.orientation
             yaw = yaw_from_quaternion(q)
             self.get_logger().info(f'Punto actual: ({point.pose.position.x}, {point.pose.position.y}, {yaw})')
+            self.idle_since = None
 
     def spin_if_idle(self):
         if self.idle_since is None:
@@ -285,7 +286,6 @@ class Mision(Node):
         self.pub_victimas.publish(armar_reporte(x, y, self.get_clock().now().to_msg()))
 
     def terminar(self):
-        """Publica en /done: termina la corrida (§5)."""
         self.check_reports(self.p['min_observations_final'], self.p['max_deviation_final_m'])
         self.change_state('finishing')
 
