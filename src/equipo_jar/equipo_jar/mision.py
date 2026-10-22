@@ -38,7 +38,7 @@ class Mision(Node):
                                             'min_report_distance_m': 0.40, 'same_point_distance_m': 0.30, 
                                             'same_point_angle_rad': 0.5, 'return_time_s': 480.0,
                                             'min_observations_final': 1, 'max_deviation_final_m': 0.30, 
-                                            'finish_time_s': 570.0})  # parámetros ajustables
+                                            'finish_time_s': 570.0, 'idle_spin_s': 10.0, 'idle_spin_rad': 1.57})  # parámetros ajustables
 
         self.mapa = None
         self.plan = None
@@ -63,6 +63,8 @@ class Mision(Node):
 
         self.return_sent = False
         self.canceling = False
+
+        self.idle_since = None
 
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
@@ -189,16 +191,19 @@ class Mision(Node):
         if self.nav_state == 'sending' or self.nav_state == 'moving':
             return
         if self.nav_state == 'arrived' or self.nav_state == 'failed':
-            x = self.current_point.pose.position.x
-            y = self.current_point.pose.position.y
-            yaw = yaw_from_quaternion(self.current_point.pose.orientation)
-            self.visited.append((x, y, yaw))
+            if self.current_point is not None:
+                x = self.current_point.pose.position.x
+                y = self.current_point.pose.position.y
+                yaw = yaw_from_quaternion(self.current_point.pose.orientation)
+                self.visited.append((x, y, yaw))
             self.current_point = None
             self.nav_state = 'idle'
         if self.plan is None:
+            self.spin_if_idle()
             return
         point = first_pending(self.plan.poses, self.visited, self.p['same_point_distance_m'], self.p['same_point_angle_rad'])
         if point is None:
+            self.spin_if_idle()
             return
         sent = self.go_to(point)
         if sent:
@@ -206,6 +211,22 @@ class Mision(Node):
             q = point.pose.orientation
             yaw = yaw_from_quaternion(q)
             self.get_logger().info(f'Punto actual: ({point.pose.position.x}, {point.pose.position.y}, {yaw})')
+
+    def spin_if_idle(self):
+        if self.idle_since is None:
+            time = self.seconds_since_t0()
+            self.idle_since = time
+            return
+        if self.seconds_since_t0() - self.idle_since < self.p['idle_spin_s']:
+            return
+        pose = self.current_pose()
+        if pose is None:
+            return
+        x, y, yaw = pose
+        if self.go_to(self.make_pose(x, y, yaw + self.p['idle_spin_rad'])):
+            self.get_logger().info('Sin plan: giro en el lugar')
+            self.idle_since = None
+
 
     def reason_to_return(self):
         if len(self.reported_points) >= self.cantidad_victimas:
