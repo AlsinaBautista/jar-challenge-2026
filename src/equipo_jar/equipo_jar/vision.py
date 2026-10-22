@@ -105,6 +105,22 @@ class Blob:
 # ============================================================================ image
 
 
+def decode_image(data, height: int, width: int, step: int, encoding: str) -> np.ndarray:
+    """sensor_msgs/Image fields -> (H, W, 3) uint8 BGR array, without cv_bridge.
+
+    Only `bgr8` and `rgb8` are handled (the robot camera publishes rgb8 or bgr8). `step` is
+    the row length in bytes and may include padding, so rows are cut to width * 3.
+    Avoids a dependency on cv_bridge, which is not in the ROS base image.
+    """
+    if encoding not in ('bgr8', 'rgb8'):
+        raise ValueError(f'unsupported image encoding: {encoding}')
+    buf = np.frombuffer(data, dtype=np.uint8)
+    img = buf.reshape(height, step)[:, :width * 3].reshape(height, width, 3)
+    if encoding == 'rgb8':
+        img = img[:, :, ::-1]
+    return np.ascontiguousarray(img)
+
+
 def red_mask(bgr: np.ndarray, p: VisionParams) -> np.ndarray:
     """uint8 mask (0 or 255) of red pixels, cleaned with opening and closing.
 

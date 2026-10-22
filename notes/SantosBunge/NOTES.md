@@ -71,6 +71,17 @@ One entry per decision: the question, what was tried, what was decided.
   startup: `sync_tolerance_s` (the synchronizer is built once) and `publish_debug`.
 - HSV bounds are lists of 3 (the CI rejects numeric lists of 4 or more).
 
+## Which dependencies?
+
+- Tried: cv_bridge and python3-opencv as rosdep (apt) dependencies. The first run on the
+  simulation server died at container start right after the build (batch
+  20261022-130550-3826108, `rc docker`, 0 s), most likely because those apt packages are
+  not in the server's base image and the install failed.
+- Decided: no cv_bridge (images decoded with numpy in `vision.decode_image`, bgr8/rgb8)
+  and OpenCV from pip (`opencv-python-headless==4.9.0.80` in `requirements.txt`, the
+  path the template documents). The remaining `package.xml` additions
+  (tf2_geometry_msgs, sensor_msgs_py, message_filters, numpy) ship with ros-base.
+
 ## Next
 
 - Run on the simulation server and compare `/jar/observaciones` against the box

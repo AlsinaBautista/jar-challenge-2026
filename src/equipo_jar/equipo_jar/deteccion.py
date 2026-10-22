@@ -39,7 +39,6 @@ from sensor_msgs_py import point_cloud2
 import message_filters
 import tf2_geometry_msgs  # noqa: F401  (registers PointStamped transforms in tf2)
 import tf2_ros
-from cv_bridge import CvBridge
 
 from equipo_jar import vision
 from equipo_jar.comun import correr, parametros_en_vivo
@@ -88,7 +87,6 @@ class Detection(Node):
         super().__init__('deteccion')
         self.p = parametros_en_vivo(self, PARAM_DEFAULTS)
 
-        self.bridge = CvBridge()
         self.K = None                       # 3x3 intrinsics from camera_info
         self.last_cloud = None              # latest PointCloud2 (fallback range)
         self.t_last_proc = None
@@ -164,7 +162,12 @@ class Detection(Node):
             return
 
         vp = self._vision_params()
-        bgr = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
+        try:
+            bgr = vision.decode_image(
+                img_msg.data, img_msg.height, img_msg.width, img_msg.step, img_msg.encoding)
+        except ValueError as e:
+            self.get_logger().error(f'{e}', throttle_duration_sec=10.0)
+            return
         mask = vision.red_mask(bgr, vp)
         blobs = vision.find_blobs(mask, vp)
         if self.pub_debug is not None:
@@ -323,8 +326,12 @@ class Detection(Node):
             x, y, w, h = b.bbox
             cv2.rectangle(dbg, (x, y), (x + w, y + h), (0, 255, 0), 1)
             cv2.circle(dbg, (int(b.centroid[0]), int(b.centroid[1])), 3, (255, 255, 0), -1)
-        msg = self.bridge.cv2_to_imgmsg(dbg, encoding='bgr8')
+        msg = Image()
         msg.header = header
+        msg.height, msg.width = dbg.shape[0], dbg.shape[1]
+        msg.encoding = 'bgr8'
+        msg.step = dbg.shape[1] * 3
+        msg.data = dbg.tobytes()
         self.pub_debug.publish(msg)
 
 

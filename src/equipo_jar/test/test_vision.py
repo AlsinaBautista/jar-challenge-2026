@@ -249,3 +249,21 @@ def test_observation_sigma_grows_with_distance():
     assert vision.observation_sigma(0.0, 0.05, 0.03) == pytest.approx(0.05)
     assert vision.observation_sigma(2.0, 0.05, 0.03) == pytest.approx(0.11)
     assert vision.observation_sigma(-1.0, 0.05, 0.03) == pytest.approx(0.05)
+
+
+# ----------------------------------------------------------------------------- image decoding
+
+
+def test_decode_image_bgr8_and_rgb8_with_row_padding():
+    img = np.zeros((2, 3, 3), np.uint8)
+    img[0, 0] = (10, 20, 30)                      # B, G, R
+    img[1, 2] = (40, 50, 60)
+    # bgr8, no padding
+    out = vision.decode_image(img.tobytes(), 2, 3, 9, 'bgr8')
+    assert out.shape == (2, 3, 3) and tuple(out[0, 0]) == (10, 20, 30)
+    # rgb8 with 2 bytes of padding per row -> channels swapped, padding dropped
+    rows = [img[r].tobytes() + b'\x00\x00' for r in range(2)]
+    out = vision.decode_image(b''.join(rows), 2, 3, 11, 'rgb8')
+    assert tuple(out[0, 0]) == (30, 20, 10) and tuple(out[1, 2]) == (60, 50, 40)
+    with pytest.raises(ValueError):
+        vision.decode_image(img.tobytes(), 2, 3, 9, 'mono8')

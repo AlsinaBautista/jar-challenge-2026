@@ -21,6 +21,8 @@ propose it as an interface change.
   Simulation only on the team server (`docs/team/SIMULATION.md`), never locally.
 - Internal topics: `/jar/observaciones` (detection -> fusion) and `/jar/candidatas`
   (fusion -> mission). Never publish on `/victimas` or `/cmd_vel` from perception.
-- Shared files touched so far: `package.xml` (added cv_bridge, tf2_geometry_msgs,
-  sensor_msgs_py, message_filters, python3-opencv, python3-numpy). Ask before touching
-  `setup.py`, the launch files or `equipo_jar_msgs`.
+- Shared files touched so far: `package.xml` (added tf2_geometry_msgs, sensor_msgs_py,
+  message_filters, python3-numpy: all already in the ROS base image) and
+  `requirements.txt` (opencv-python-headless, pip). No cv_bridge: images are decoded with
+  numpy (`vision.decode_image`). Ask before touching `setup.py`, the launch files or
+  `equipo_jar_msgs`.
