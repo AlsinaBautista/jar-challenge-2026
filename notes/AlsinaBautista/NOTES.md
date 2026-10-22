@@ -126,9 +126,32 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
   `src/equipo_jar/equipo_jar/mapa.py` so coverage can use them too. If coverage
   writes similar ones, we merge them into one file.
 
+## How does mission look at doubtful candidates?
+
+- Problem: a box seen from one place stays at 0.15 m spread in fusion, above
+  `max_deviation_m`. Seen once in passing, it is only reported in the final round,
+  and the fast bonus is lost.
+- Decided: every time the robot is free (a trip ended), before the next plan point
+  or a turn, mission picks the nearest unreported candidate with at least
+  `visit_min_observations` (2) that it has not visited yet (`inspeccion.py`,
+  `pick_doubtful`). It goes to look at it from a free spot on a circle of
+  `visit_distance_m` (0.8 m) around the box, facing it (`viewpoint_for`):
+  - `visit_angles` (12) spots are tried; the robot must fit (`visit_clearance_m`,
+    0.25 m from walls, unknown cells and the map edge);
+  - no wall between the spot and the box, checked up to `visit_box_margin_m`
+    (0.25 m) before its center, in case the map draws the boxes;
+  - at least `visit_min_shift_m` (0.4 m) from the robot, so fusion gets a new view;
+  - of the valid spots, the nearest to the robot.
+- Each candidate is visited once, even if the trip fails or there is no spot:
+  visited ones are remembered by position, like reports. Visits are not plan points.
+- Mission does not go back for "no plan points left" while a doubtful candidate is
+  still waiting for its visit.
+- To check in the simulator: the robot leaves as soon as it arrives. If fusion
+  needs more time to confirm, add a short wait at the spot.
+
 ## Next
 
-- Go and look at doubtful candidates up close.
+- Run it in the simulator once Nav2, localization and coverage are in `development`.
 
 ## Testing without the other modules
 
