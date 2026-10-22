@@ -159,5 +159,5 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
   any goal, waits, answers succeeded (or aborted with `-p fallar:=true`) and
   accepts cancels. Fake `/map`, plan, candidates and TF with `ros2 topic pub` and
   `ros2 run tf2_ros static_transform_publisher`.
-- Unit tests (no ROS needed): `src/equipo_jar/test/test_confirmacion.py` and
-  `test_exploracion.py`.
+- Unit tests (no ROS needed) in `src/equipo_jar/test/`: `test_confirmacion.py`,
+  `test_exploracion.py`, `test_mapa.py` and `test_inspeccion.py`.
