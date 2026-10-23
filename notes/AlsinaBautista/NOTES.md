@@ -161,6 +161,20 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
   with its traceback (at most every 5 s) and carry on. If a Nav2 callback fails,
   the goal counts as failed, so mission never waits forever for it.
 
+## What if navigation gets stuck?
+
+- Problem: while a goal is in progress mission only waits. If Nav2 gets stuck with
+  a goal, mission waits forever and the judge ends the run after 60 s still.
+- Decided: while a goal is moving, mission cancels it if it takes more than
+  `goal_timeout_s` (90 s), or if the robot has not moved `stuck_distance_m` (5 cm)
+  nor turned `stuck_angle_rad` (0.2 rad) for `stuck_time_s` (20 s). Movement is
+  read from `odom → base_footprint`, like the judge reads /odom: AMCL corrections
+  in `map` would look like movement. Without odom data the robot is not called
+  stuck. After cancelling, mission waits for the goal's result (failed) and goes on
+  as with any failed goal; a stuck return ends the run.
+- Not covered: Nav2 never answering a goal (`sending` forever). Nav2 is down then,
+  and no new goal would help.
+
 ## Next
 
 - Run it in the simulator once Nav2, localization and coverage are in `development`.

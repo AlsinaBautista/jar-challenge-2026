@@ -20,7 +20,7 @@ from equipo_jar.comun import QOS_ESTADO, QOS_MAPA, correr, parametros_en_vivo
 from equipo_jar.reportes import armar_reporte
 from equipo_jar_msgs.msg import Candidatas
 from equipo_jar.confirmacion import select_to_report
-from equipo_jar.exploracion import yaw_from_quaternion, first_pending
+from equipo_jar.exploracion import yaw_from_quaternion, first_pending, angle_difference
 from equipo_jar.inspeccion import pick_doubtful, viewpoint_for
 
 from tf2_ros import Buffer, TransformListener, TransformException
@@ -45,7 +45,8 @@ class Mision(Node):
                                             'visit_min_observations': 2, 'visit_distance_m': 0.8, 
                                             'visit_clearance_m': 0.25, 'visit_angles': 12, 
                                             'visit_min_shift_m': 0.4, 'visit_box_margin_m': 0.25, 
-                                            'start_wait_s': 8.0})  # parámetros ajustables
+                                            'start_wait_s': 8.0, 'goal_timeout_s': 90.0, 'stuck_time_s': 20.0,
+                                            'stuck_distance_m': 0.05, 'stuck_angle_rad': 0.2})  # parámetros ajustables
 
         self.mapa = None
         self.plan = None
@@ -75,6 +76,11 @@ class Mision(Node):
         self.idle_since = None
 
         self.start_locked = False
+
+        self.goal_start_time = None
+        self.last_motion_pose = None
+        self.last_motion_time = None
+        self.stuck_canceling = False
 
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
@@ -113,6 +119,17 @@ class Mision(Node):
         except TransformException:
             return None
 
+    def odom_pose(self):
+        try:
+            pose = self.tf_buffer.lookup_transform('odom', 'base_footprint', Time())
+            x = pose.transform.translation.x
+            y = pose.transform.translation.y
+            q = pose.transform.rotation
+            yaw = yaw_from_quaternion(q)
+            return (x, y, yaw)
+        except TransformException:
+            return None
+
     def check_reports(self, min_obs, max_deviation):
         if self.candidatas is None:
             return
@@ -135,6 +152,11 @@ class Mision(Node):
         self.nav_state = "sending"
         future = self.navegacion.send_goal_async(goal)
         future.add_done_callback(self.on_goal_response)
+        now = self.seconds_since_t0()
+        self.goal_start_time = now
+        self.last_motion_time = now
+        self.last_motion_pose = self.odom_pose()
+        self.stuck_canceling = False
         if not self.start_locked:
             self.start_locked = True
             if self.start_pose is not None:
@@ -143,6 +165,34 @@ class Mision(Node):
             else:
                 self.get_logger().warning('Primer viaje sin pose de inicio: no se va a poder volver')
         return True
+
+    def check_stuck(self):
+        if self.nav_state != 'moving' or self.stuck_canceling:
+            return
+        now = self.seconds_since_t0()
+        pose = self.odom_pose()
+
+        if pose is None or self.last_motion_pose is None:
+            self.last_motion_pose = pose
+            self.last_motion_time = now
+        else:
+            x1, y1, yaw1 = pose
+            x2, y2, yaw2 = self.last_motion_pose
+            dist = math.hypot(x1 - x2, y1 - y2)
+            spin = angle_difference(yaw1, yaw2)
+            if dist > self.p['stuck_distance_m'] or spin > self.p['stuck_angle_rad']:
+                self.last_motion_pose = pose
+                self.last_motion_time = now
+
+        reason = None
+        if now - self.goal_start_time > self.p['goal_timeout_s']:
+            reason = 'viaje demasiado largo'
+        elif now - self.last_motion_time > self.p['stuck_time_s']:
+            reason = 'robot quieto'
+        if reason is not None:
+            self.current_goal.cancel_goal_async()
+            self.stuck_canceling = True
+            self.get_logger().warning(f'Cancelo el viaje: {reason}')
 
     def handle_on_goal_response(self, future):
         goal_handle = future.result()
@@ -211,6 +261,7 @@ class Mision(Node):
         self.check_reports(self.p['min_observations'], self.p['max_deviation_m'])
         if self.seconds_since_t0() < self.p['start_wait_s']:
             return
+        self.check_stuck()
         if self.state == 'exploring':
             reason = self.reason_to_return()
             if reason is not None:
