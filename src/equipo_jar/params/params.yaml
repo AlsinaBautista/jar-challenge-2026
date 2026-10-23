@@ -108,3 +108,8 @@ mision:
     visit_angles: 12
     visit_min_shift_m: 0.4
     visit_box_margin_m: 0.25
+    start_wait_s: 8.0
+    goal_timeout_s: 90.0
+    stuck_time_s: 20.0
+    stuck_distance_m: 0.05
+    stuck_angle_rad: 0.2

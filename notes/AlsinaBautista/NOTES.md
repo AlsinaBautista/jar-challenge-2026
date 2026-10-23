@@ -70,9 +70,13 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 
 - Tried: reading it when /map arrives. Localization needs the map before it
   publishes `map → odom`, so at that moment the pose usually doesn't exist yet.
-- Decided: read `map → base_footprint` from TF on every tick after /map until it
-  works. The robot doesn't move before mission sends a goal, so the first pose
-  found is the start.
+- Tried: keeping the first `map → base_footprint` found after /map. With AMCL that
+  is its first guess, before it corrects the hand placement (hans-die's
+  `localizacion` node settles it in about 5 s).
+- Decided: until the first goal the robot has not moved, so the latest pose is the
+  best estimate of the start. Mission updates `start_pose` on every tick and freezes
+  it when it sends the first goal (`go_to`). No goal goes out during the first
+  `start_wait_s` (8 s) after /map, so AMCL can settle; reports are not delayed.
 
 ## When does the robot go back?
 
@@ -148,6 +152,28 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
   still waiting for its visit.
 - To check in the simulator: the robot leaves as soon as it arrives. If fusion
   needs more time to confirm, add a short wait at the spot.
+
+## What if mission hits an unexpected error?
+
+- Problem: an error in a callback goes up to `rclpy.spin`, `correr()` only catches
+  Ctrl+C, and the node closes. Nobody restarts it: no more reports, goals or /done.
+- Decided: `step`, `on_goal_response` and `on_goal_result` catch any error, log it
+  with its traceback (at most every 5 s) and carry on. If a Nav2 callback fails,
+  the goal counts as failed, so mission never waits forever for it.
+
+## What if navigation gets stuck?
+
+- Problem: while a goal is in progress mission only waits. If Nav2 gets stuck with
+  a goal, mission waits forever and the judge ends the run after 60 s still.
+- Decided: while a goal is moving, mission cancels it if it takes more than
+  `goal_timeout_s` (90 s), or if the robot has not moved `stuck_distance_m` (5 cm)
+  nor turned `stuck_angle_rad` (0.2 rad) for `stuck_time_s` (20 s). Movement is
+  read from `odom → base_footprint`, like the judge reads /odom: AMCL corrections
+  in `map` would look like movement. Without odom data the robot is not called
+  stuck. After cancelling, mission waits for the goal's result (failed) and goes on
+  as with any failed goal; a stuck return ends the run.
+- Not covered: Nav2 never answering a goal (`sending` forever). Nav2 is down then,
+  and no new goal would help.
 
 ## Next
 
