@@ -44,7 +44,8 @@ class Mision(Node):
                                             'finish_time_s': 570.0, 'idle_spin_s': 10.0, 'idle_spin_rad': 1.57,
                                             'visit_min_observations': 2, 'visit_distance_m': 0.8, 
                                             'visit_clearance_m': 0.25, 'visit_angles': 12, 
-                                            'visit_min_shift_m': 0.4, 'visit_box_margin_m': 0.25})  # parámetros ajustables
+                                            'visit_min_shift_m': 0.4, 'visit_box_margin_m': 0.25, 
+                                            'start_wait_s': 8.0})  # parámetros ajustables
 
         self.mapa = None
         self.plan = None
@@ -72,6 +73,8 @@ class Mision(Node):
         self.canceling = False
 
         self.idle_since = None
+
+        self.start_locked = False
 
         self.create_subscription(OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.create_subscription(Path, '/jar/plan_cobertura', self.al_recibir_plan, QOS_ESTADO)
@@ -132,6 +135,13 @@ class Mision(Node):
         self.nav_state = "sending"
         future = self.navegacion.send_goal_async(goal)
         future.add_done_callback(self.on_goal_response)
+        if not self.start_locked:
+            self.start_locked = True
+            if self.start_pose is not None:
+                x, y, yaw = self.start_pose
+                self.get_logger().info(f'Pose de inicio fija: x={x:.2f} y={y:.2f} yaw={yaw:.2f}')
+            else:
+                self.get_logger().warning('Primer viaje sin pose de inicio: no se va a poder volver')
         return True
 
     def handle_on_goal_response(self, future):
@@ -185,12 +195,13 @@ class Mision(Node):
             self.pub_done.publish(Empty())
             self.change_state('finished')
             return
-        if self.start_pose is None:
+        if not self.start_locked:
             pose = self.current_pose()
             if pose is not None:
+                if self.start_pose is None:
+                    x, y, yaw = pose
+                    self.get_logger().info(f'Pose de inicio (provisoria): x={x:.2f} y={y:.2f} yaw={yaw:.2f}')
                 self.start_pose = pose
-                x, y, yaw = pose
-                self.get_logger().info(f'Pose de inicio: x={x:.2f} y={y:.2f} yaw={yaw:.2f}')
         if self.seconds_since_t0() >= self.p['finish_time_s']:
             self.get_logger().info('Se termina el tiempo de la corrida')
             if self.nav_state == 'moving':
@@ -198,6 +209,8 @@ class Mision(Node):
             self.terminar()
             return
         self.check_reports(self.p['min_observations'], self.p['max_deviation_m'])
+        if self.seconds_since_t0() < self.p['start_wait_s']:
+            return
         if self.state == 'exploring':
             reason = self.reason_to_return()
             if reason is not None:

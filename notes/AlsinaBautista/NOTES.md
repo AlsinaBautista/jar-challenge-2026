@@ -70,9 +70,13 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 
 - Tried: reading it when /map arrives. Localization needs the map before it
   publishes `map → odom`, so at that moment the pose usually doesn't exist yet.
-- Decided: read `map → base_footprint` from TF on every tick after /map until it
-  works. The robot doesn't move before mission sends a goal, so the first pose
-  found is the start.
+- Tried: keeping the first `map → base_footprint` found after /map. With AMCL that
+  is its first guess, before it corrects the hand placement (hans-die's
+  `localizacion` node settles it in about 5 s).
+- Decided: until the first goal the robot has not moved, so the latest pose is the
+  best estimate of the start. Mission updates `start_pose` on every tick and freezes
+  it when it sends the first goal (`go_to`). No goal goes out during the first
+  `start_wait_s` (8 s) after /map, so AMCL can settle; reports are not delayed.
 
 ## When does the robot go back?
 
