@@ -149,6 +149,14 @@ report), `exploracion.py` (where to go). Tunables: the `mision` section of
 - To check in the simulator: the robot leaves as soon as it arrives. If fusion
   needs more time to confirm, add a short wait at the spot.
 
+## What if mission hits an unexpected error?
+
+- Problem: an error in a callback goes up to `rclpy.spin`, `correr()` only catches
+  Ctrl+C, and the node closes. Nobody restarts it: no more reports, goals or /done.
+- Decided: `step`, `on_goal_response` and `on_goal_result` catch any error, log it
+  with its traceback (at most every 5 s) and carry on. If a Nav2 callback fails,
+  the goal counts as failed, so mission never waits forever for it.
+
 ## Next
 
 - Run it in the simulator once Nav2, localization and coverage are in `development`.

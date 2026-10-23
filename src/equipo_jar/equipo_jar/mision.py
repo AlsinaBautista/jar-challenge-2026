@@ -28,6 +28,8 @@ from rclpy.time import Time
 import math
 from action_msgs.msg import GoalStatus
 
+import traceback
+
 
 class Mision(Node):
     def __init__(self):
@@ -132,7 +134,7 @@ class Mision(Node):
         future.add_done_callback(self.on_goal_response)
         return True
 
-    def on_goal_response(self, future):
+    def handle_on_goal_response(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.nav_state = 'failed'
@@ -145,7 +147,14 @@ class Mision(Node):
         self.nav_state = 'moving'
         goal_handle.get_result_async().add_done_callback(self.on_goal_result)
 
-    def on_goal_result(self, future):
+    def on_goal_response(self, future):
+        try:
+            self.handle_on_goal_response(future)
+        except Exception:
+            self.nav_state = 'failed'
+            self.get_logger().error(f'Error en on_goal_response:\n{traceback.format_exc()}', throttle_duration_sec=5.0)
+
+    def handle_on_goal_result(self, future):
         status = future.result().status
         if status == GoalStatus.STATUS_SUCCEEDED:
             self.nav_state = 'arrived'
@@ -154,11 +163,18 @@ class Mision(Node):
             self.nav_state = 'failed'
             self.get_logger().info('Status failed')
 
+    def on_goal_result(self, future):
+        try:
+            self.handle_on_goal_result(future)
+        except Exception:
+            self.nav_state = 'failed'
+            self.get_logger().error(f'Error en on_goal_result:\n{traceback.format_exc()}', throttle_duration_sec=5.0)
+
     def change_state(self, new_state):
         self.get_logger().info(f'Estado: <{self.state}> -> <{new_state}>')
         self.state = new_state
 
-    def step(self):
+    def step_logic(self):
         if self.state == 'waiting_for_map':
             if self.t0 is not None:
                 self.change_state('exploring')
@@ -191,6 +207,12 @@ class Mision(Node):
                 self.explore()
         if self.state == 'returning':
             self.return_to_start()
+
+    def step(self):
+        try:
+            self.step_logic()
+        except Exception:
+            self.get_logger().error(f'Error en step:\n{traceback.format_exc()}', throttle_duration_sec=5.0)
 
     def explore(self):
         if self.nav_state == 'sending' or self.nav_state == 'moving':
